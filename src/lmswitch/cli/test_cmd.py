@@ -9,25 +9,12 @@ import click
 
 from lmswitch.core.config import ensure_config_exists
 from lmswitch.core.resolver import ConfigResolver
-from lmswitch.providers.anthropic import AnthropicProvider
-from lmswitch.providers.custom import CustomProvider
-from lmswitch.providers.google import GoogleProvider
-from lmswitch.providers.openai import OpenAIProvider
+from lmswitch.providers.registry import get_provider
 from lmswitch.models.schema import ProviderConfig, TestResult
-from lmswitch.models.types import ProviderType
-
-_PROVIDER_CLASSES: dict[ProviderType, type] = {
-    ProviderType.ANTHROPIC: AnthropicProvider,
-    ProviderType.OPENAI: OpenAIProvider,
-    ProviderType.GOOGLE: GoogleProvider,
-    ProviderType.DEEPSEEK: CustomProvider,
-    ProviderType.CUSTOM: CustomProvider,
-}
 
 
-def _make_provider(pc: ProviderConfig):
-    cls = _PROVIDER_CLASSES.get(pc.name)
-    return cls(pc) if cls else None
+def _make_provider(pc):
+    return get_provider(pc)
 
 
 def _first_endpoint(pc: ProviderConfig) -> str:
@@ -85,11 +72,13 @@ def _test_model(config, provider_name: str, model: str) -> list[TestResult]:
 
 
 def _test_provider_models(config, provider_name: str) -> list[TestResult]:
-    resolver = ConfigResolver(config)
     try:
-        pc = resolver.get_provider(provider_name)
+        pc = ConfigResolver(config).get_provider(provider_name)
     except KeyError as e:
         click.secho(f"Provider 未配置: {e}", fg="red")
+        return []
+    except ValueError as e:
+        click.secho(f"配置错误: {e}", fg="red")
         return []
     p = _make_provider(pc)
     if p is None:
@@ -102,6 +91,9 @@ def _test_provider_models(config, provider_name: str) -> list[TestResult]:
 
 def _print_results_table(results: list[TestResult]) -> None:
     """以表格形式打印测试结果."""
+    if not results:
+        click.echo("  无结果")
+        return
     name_w = max(max(len(r.provider.value) for r in results), 8)
     model_w = max(max(len(r.model) for r in results), 5)
     status_w = 12

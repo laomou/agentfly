@@ -62,7 +62,7 @@ def load_config(path: Optional[str | Path] = None) -> UnifiedConfig:
     with open(p, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
 
-    return UnifiedConfig(**data)
+    return UnifiedConfig.model_validate(data)
 
 
 def save_config(config: UnifiedConfig, path: Optional[str | Path] = None) -> Path:
@@ -79,8 +79,10 @@ def save_config(config: UnifiedConfig, path: Optional[str | Path] = None) -> Pat
     p.parent.mkdir(parents=True, exist_ok=True)
 
     # mode="json" 确保 Enum 序列化为字符串而非 Python 对象引用
+    # exclude_defaults 去掉 null / [] / {} 等默认值
+    data = config.model_dump(mode="json", exclude_defaults=True)
     content = yaml.dump(
-        config.model_dump(mode="json"),
+        data,
         allow_unicode=True,
         default_flow_style=False,
         sort_keys=False,

@@ -5,8 +5,7 @@ from __future__ import annotations
 from importlib.metadata import entry_points
 from typing import Iterator, Optional
 
-from lmswitch.agents.base import AgentAdapter
-from lmswitch.models.types import AgentType
+from lmswitch.agents.base import Agent
 
 
 class AgentRegistry:
@@ -18,18 +17,15 @@ class AgentRegistry:
     """
 
     def __init__(self):
-        self._agents: dict[str, AgentAdapter] = {}
+        self._agents: dict[str, Agent] = {}
 
-    def register(self, adapter: AgentAdapter) -> None:
-        """注册一个 Agent 适配器."""
-        self._agents[adapter.name.value] = adapter
+    def register(self, agent: Agent) -> None:
+        self._agents[agent.name.value] = agent
 
-    def get(self, name: str) -> Optional[AgentAdapter]:
-        """通过名称获取 Agent 适配器."""
+    def get(self, name: str) -> Optional[Agent]:
         return self._agents.get(name)
 
-    def list(self) -> Iterator[AgentAdapter]:
-        """遍历所有已注册的 Agent."""
+    def list(self) -> Iterator[Agent]:
         yield from self._agents.values()
 
     def names(self) -> list[str]:

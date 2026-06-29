@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from lmswitch.agents.base import AgentAdapter
+from lmswitch.agents.base import Agent
 from lmswitch.models.schema import ResolvedConfig
 from lmswitch.models.types import AgentType
 
 
-class CodexAdapter(AgentAdapter):
+class Codex(Agent):
     """OpenAI Codex CLI 适配器.
 
     需要环境变量:
@@ -30,5 +30,4 @@ class CodexAdapter(AgentAdapter):
         cmd = ["codex"]
         if config.agent.model:
             cmd.extend(["--model", config.agent.model])
-        cmd.extend(config.agent.extra_args)
         return cmd

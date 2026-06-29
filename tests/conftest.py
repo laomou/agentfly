@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -45,7 +44,6 @@ def unified_config(provider_config, agent_config):
     """完整统一配置."""
     return UnifiedConfig(
         version="1",
-        default_provider="anthropic",
         providers={"anthropic": provider_config},
         agents={agent_config.name.value: agent_config},
     )

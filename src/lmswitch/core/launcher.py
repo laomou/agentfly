@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-import os
+import shutil
 import subprocess
 import sys
 from typing import Optional
 
 from lmswitch.models.schema import ResolvedConfig
-from lmswitch.agents.base import AgentAdapter
+from lmswitch.agents.base import Agent
 from lmswitch.core.injector import EnvInjector
+from lmswitch.providers.registry import get_provider
 
 
 class LaunchError(Exception):
@@ -22,34 +23,20 @@ class AgentLauncher:
     """Agent 启动器.
 
     负责:
-    1. 调用 AgentAdapter 获取 env_vars / config_files / launch_command
-    2. 注入环境变量和配置文件
+    1. 调用 Agent 获取 env_vars / launch_command
+    2. 注入环境变量
     3. 通过 subprocess 启动 Agent
     """
 
-    def __init__(self, adapter: AgentAdapter):
-        self._adapter = adapter
+    def __init__(self, agent: Agent):
+        self._adapter = agent
         self._injector = EnvInjector()
-
-    def dry_run(self, resolved: ResolvedConfig) -> dict:
-        """预览启动配置，不实际执行.
-
-        Returns:
-            包含 env_vars, config_files, launch_command 的字典.
-        """
-        return {
-            "agent": self._adapter.name,
-            "env_vars": self._adapter.env_vars(resolved),
-            "config_files": self._adapter.config_files(resolved),
-            "launch_command": self._adapter.launch_command(resolved),
-        }
 
     def launch(
         self,
         resolved: ResolvedConfig,
         *,
         cwd: Optional[str] = None,
-        dry_run: bool = False,
     ) -> int:
         """启动 Agent.
 
@@ -66,24 +53,26 @@ class AgentLauncher:
         """
         # 1. 获取 agent 产出
         env_vars = self._adapter.env_vars(resolved)
-        config_files = self._adapter.config_files(resolved)
         launch_cmd = self._adapter.launch_command(resolved)
 
-        if dry_run:
-            import json
-            info = self.dry_run(resolved)
-            print(json.dumps(info, indent=2, ensure_ascii=False))
-            return 0
+        # 2. Provider 环境变量覆盖 (来自远程 JSON 配置)
+        provider = get_provider(resolved.provider)
+        if provider:
+            for k, v in provider.env_for(resolved.agent.name.value).items():
+                env_vars[k] = v  # provider 覆盖 adapter 通用值
 
-        # 2. 写入配置文件
+        # 3. 检查 Agent 是否已安装
+        cmd_name = launch_cmd[0]
+        if not shutil.which(cmd_name):
+            raise LaunchError(
+                f"未检测到 '{cmd_name}'，请先安装 {self._adapter.name}"
+            )
+
+        # 4. 构建完整环境变量
         self._adapter.pre_launch(resolved)
-        if config_files:
-            self._injector.write_config_files(config_files)
-
-        # 3. 构建完整环境变量
         full_env = self._injector.build_env(resolved, env_vars)
 
-        # 4. 启动子进程
+        # 5. 启动子进程
         try:
             proc = subprocess.Popen(
                 launch_cmd,
@@ -94,16 +83,9 @@ class AgentLauncher:
                 stderr=sys.stderr,
             )
             proc.wait()
-
-            # 5. 启动后清理
             self._adapter.post_launch()
 
             return proc.returncode
 
-        except FileNotFoundError:
-            raise LaunchError(
-                f"无法找到启动命令: {' '.join(launch_cmd)}\n"
-                f"请确认 '{self._adapter.name}' 已安装且在 PATH 中."
-            )
         except Exception as e:
             raise LaunchError(f"启动 {self._adapter.name} 失败: {e}")

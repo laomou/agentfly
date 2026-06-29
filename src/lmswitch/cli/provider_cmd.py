@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sys
+from pathlib import Path
 
 import click
 import httpx
@@ -13,81 +15,59 @@ from lmswitch.models.schema import ProviderConfig
 from lmswitch.models.types import ProviderType
 from lmswitch.providers.manager import ProviderManager
 
-# ── 已知 Provider 厂商 ──
-# 格式: { "vendor": {"endpoints": {"openai": "url", ...}, "models": [...] } }
-_KNOWN_DEFAULTS: dict[str, dict] = {
-    "openai": {
-        "endpoints": {"openai": "https://api.openai.com"},
-        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o3", "o4-mini"],
-    },
-    "deepseek": {
-        "endpoints": {
-            "openai": "https://api.deepseek.com",
-            "anthropic": "https://api.deepseek.com/anthropic",
-        },
-        "models": ["deepseek-chat", "deepseek-reasoner"],
-    },
-    "moonshot": {
-        "endpoints": {"openai": "https://api.moonshot.cn"},
-        "models": ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
-    },
-    "zhipu": {
-        "endpoints": {"openai": "https://open.bigmodel.cn/api/paas/v4"},
-        "models": ["glm-4-plus", "glm-4-flash", "glm-4-air"],
-    },
-    "qwen": {
-        "endpoints": {"openai": "https://dashscope.aliyuncs.com/compatible-mode/v1"},
-        "models": ["qwen-max", "qwen-plus", "qwen-turbo"],
-    },
-    "siliconflow": {
-        "endpoints": {"openai": "https://api.siliconflow.cn"},
-        "models": ["Qwen/Qwen2.5-72B-Instruct", "deepseek-ai/DeepSeek-V3"],
-    },
-    "together": {
-        "endpoints": {"openai": "https://api.together.xyz"},
-        "models": ["meta-llama/Llama-3.3-70B-Instruct-Turbo"],
-    },
-    "groq": {
-        "endpoints": {"openai": "https://api.groq.com/openai/v1"},
-        "models": ["llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
-    },
-    "openrouter": {
-        "endpoints": {"openai": "https://openrouter.ai/api/v1"},
-        "models": ["openai/gpt-4o", "anthropic/claude-sonnet-4-6"],
-    },
-    "perplexity": {
-        "endpoints": {"openai": "https://api.perplexity.com"},
-        "models": ["sonar-pro", "sonar"],
-    },
-    "cerebras": {
-        "endpoints": {"openai": "https://api.cerebras.ai/v1"},
-        "models": ["llama3.1-8b", "llama3.1-70b"],
-    },
-    "mistral": {
-        "endpoints": {"openai": "https://api.mistral.ai/v1"},
-        "models": ["mistral-large-latest", "mistral-small-latest"],
-    },
-    "xai": {
-        "endpoints": {"openai": "https://api.x.ai/v1"},
-        "models": ["grok-2", "grok-2-mini"],
-    },
-    "minimax": {
-        "endpoints": {"openai": "https://api.minimax.chat/v1"},
-        "models": ["abab6.5s-chat", "abab7-chat"],
-    },
-    "fireworks": {
-        "endpoints": {"openai": "https://api.fireworks.ai/inference/v1"},
-        "models": ["accounts/fireworks/models/llama-v3p3-70b-instruct"],
-    },
-    "anthropic": {
-        "endpoints": {"anthropic": "https://api.anthropic.com"},
-        "models": ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"],
-    },
-    "google": {
-        "endpoints": {},  # 不使用标准 OpenAI/Anthropic 协议
-        "models": ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
-    },
-}
+# ── 远端厂商配置 ──
+
+_GITHUB_RAW = "https://raw.githubusercontent.com/laomou/LMSwitch/main/src/lmswitch"
+_KNOWN_CACHE: dict[str, dict] | None = None
+
+
+def _get_known_providers() -> dict[str, dict]:
+    """从 GitHub 拉取已知厂商列表，失败降级本地 providers.json.
+
+    每进程缓存一次，不重复拉取.
+    """
+    global _KNOWN_CACHE
+    if _KNOWN_CACHE is not None:
+        return _KNOWN_CACHE
+
+    url = f"{_GITHUB_RAW}/providers/providers.json"
+    try:
+        resp = httpx.get(url, timeout=3)
+        if resp.status_code == 200:
+            _KNOWN_CACHE = resp.json()
+            # 缓存到磁盘，离线可用
+            cache_dir = Path.home() / ".config" / "lmswitch" / "env"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            (cache_dir / "providers.json").write_text(resp.text, encoding="utf-8")
+            return _KNOWN_CACHE
+    except Exception:
+        pass
+
+    # 用户缓存 → 包默认
+    for src in [
+        Path.home() / ".config" / "lmswitch" / "env" / "providers.json",
+        Path(__file__).resolve().parent.parent / "providers" / "providers.json",
+    ]:
+        if src.exists():
+            _KNOWN_CACHE = json.loads(src.read_text())
+            return _KNOWN_CACHE
+    _KNOWN_CACHE = {}
+    return {}
+
+
+def _refresh_env_cache(provider_key: str) -> None:
+    """从 GitHub 拉取 env 配置并缓存到 ~/.config/lmswitch/env/."""
+    url = f"{_GITHUB_RAW}/providers/{provider_key}.json"
+    try:
+        resp = httpx.get(url, timeout=5)
+        if resp.status_code != 200:
+            return
+        cache_dir = Path.home() / ".config" / "lmswitch" / "env"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        (cache_dir / f"{provider_key}.json").write_text(resp.text, encoding="utf-8")
+    except Exception:
+        pass
+
 
 def _mask_key(key: str) -> str:
     """脱敏 API Key 显示. sk-abc...xyz"""
@@ -187,14 +167,12 @@ def list_providers():
     click.echo("已配置的 Provider:")
     click.echo()
     for key, p in config.providers.items():
-        default_mark = " ★" if key == config.default_provider else ""
         formats = ", ".join(p.endpoints.keys()) if p.endpoints else "(无)"
         n_models = len(p.models)
         click.echo(f"  {key:<20} [{formats}]")
         for fmt, url in p.endpoints.items():
             click.echo(f"    {fmt}: {url}")
-        click.echo(f"    默认: {p.default_model or '(未设置)'}  |  "
-                    f"{n_models} 个可用模型{default_mark}")
+        click.echo(f"    默认: {p.default_model or '(未设置)'}  |  {n_models} 个可用模型")
         click.echo()
 
 
@@ -233,34 +211,25 @@ def add_provider(name: str | None, api_base: str | None, api_key: str,
 
     \b
     内置 Provider (只需 --api-key):
+      lmswitch provider add deepseek --api-key '$DEEPSEEK_API_KEY'
       lmswitch provider add anthropic --api-key '$ANTHROPIC_API_KEY'
-      lmswitch provider add openai --api-key '$OPENAI_API_KEY'
     """
-    # ── 判断 provider 类型 & 名称 ──
-    defaults = _KNOWN_DEFAULTS.get((name or "").lower(), {})
-
+    # ── 名称 ──
     if name:
-        try:
-            provider_type = ProviderType(name.lower())
-            provider_key = provider_type.value
-            is_custom = False
-        except ValueError:
-            provider_type = ProviderType.CUSTOM
-            provider_key = name.lower().replace(" ", "-")
-            is_custom = True
+        provider_key = name.lower().replace(" ", "-")
     else:
         provider_key = _auto_name(api_base or "")
-        provider_type = ProviderType.CUSTOM
-        is_custom = True
         click.echo(f"  自动生成名称: {provider_key}")
 
-    # ── api_base: 已知厂商自动填充 ──
+    # ── 检测内置厂商 ──
+    known = _get_known_providers().get(provider_key)
+
+    # ── api_base ──
+    if known and not api_base:
+        api_base = known["api_base"]
+        click.echo(f"  已知厂商: {provider_key} → {api_base}")
     if not api_base:
-        preset = defaults.get("endpoints", {})
-        if preset:
-            api_base = next(iter(preset.values()))
-        elif is_custom:
-            api_base = click.prompt("API Base URL", default="http://localhost:8000")
+        api_base = click.prompt("API Base URL", default="http://localhost:8000")
 
     # ── 加载配置 ──
     config, cfg_path = ensure_config_exists()
@@ -272,39 +241,32 @@ def add_provider(name: str | None, api_base: str | None, api_key: str,
 
     # ── API Key 安全处理 ──
     if _is_plaintext_key(api_key):
-        env_var = f"LMSWITCH_{provider_key.upper().replace('-', '_').replace('.', '_')}_KEY"
         click.echo()
-        click.secho("  ⚠ API Key 不能明文存储在配置文件中", fg="yellow")
-        click.secho(f"  → 已自动转为环境变量引用: ${{{env_var}}}", fg="green")
-        click.secho(f"  → 请将以下内容添加到 ~/.bashrc 或 ~/.zshrc:", fg="green")
-        click.secho(f"", fg="green")
-        click.secho(f"      export {env_var}=\"{api_key}\"", fg="bright_white")
-        click.secho(f"")
-        click.secho(f"  然后执行: source ~/.bashrc  (或 ~/.zshrc)", fg="green")
-        click.echo()
-        api_key = f"${{{env_var}}}"
+        click.secho("  ⚠ 明文 API Key 会直接写入配置文件，不安全", fg="yellow")
+        click.secho("    建议使用环境变量: --api-key '${MY_KEY}'", fg="yellow")
+        if not click.confirm("    仍然明文存储?", default=False):
+            return
 
     # ── 自动探测 endpoints ──
-    endpoints: dict[str, str] = {}
     model_list: list[str] = []
-
-    preset_endpoints = defaults.get("endpoints", {})
-    preset_models = defaults.get("models", [])
-
     if models:
         model_list = [m.strip() for m in models.split(",") if m.strip()]
 
-    if is_custom:
-        click.echo(f"  探测 API 端点...")
-        endpoints = _detect_endpoints(api_base, api_key)
-        if endpoints:
-            click.echo(f"  ✓ 可用格式: {', '.join(endpoints.keys())}")
-        else:
-            click.echo(f"  ⚠ 无法自动探测，手动选择格式")
-            fmt = click.prompt("API 格式", type=click.Choice(["openai", "anthropic"]), default="openai")
-            endpoints = {fmt: api_base}
+    click.echo(f"  探测 API 端点...")
+    endpoints = _detect_endpoints(api_base, api_key)
+    if known:
+        # 已知厂商: 补全探测没识别到的格式
+        for fmt, url in known["endpoints"].items():
+            if fmt not in endpoints:
+                endpoints[fmt] = url
+                click.echo(f"  + {fmt} (已知默认)")
+        click.echo(f"  ✓ 格式: {', '.join(endpoints.keys())}")
+    elif endpoints:
+        click.echo(f"  ✓ 可用格式: {', '.join(endpoints.keys())}")
     else:
-        endpoints = preset_endpoints
+        click.echo(f"  ⚠ 无法自动探测，手动选择格式")
+        fmt = click.prompt("API 格式", type=click.Choice(["openai", "anthropic"]), default="openai")
+        endpoints = {fmt: api_base}
 
     # ── 拉取模型 ──
     if not model_list and "openai" in endpoints:
@@ -312,17 +274,13 @@ def add_provider(name: str | None, api_base: str | None, api_key: str,
         model_list = _fetch_models(endpoints["openai"], api_key)
         if model_list:
             click.echo(f"  ✓ 发现 {len(model_list)} 个模型")
-    if not model_list and preset_models:
-        model_list = preset_models
-        click.echo(f"  使用预设模型 ({len(model_list)} 个): {', '.join(model_list[:6])}"
-                   f"{'...' if len(model_list) > 6 else ''}")
     if not model_list:
         models_str = click.prompt("模型列表 (逗号分隔)", default="")
         model_list = [m.strip() for m in models_str.split(",") if m.strip()] if models_str else []
 
     default_model = model_list[0] if model_list else ""
 
-    # ── 保存 ──
+    provider_type = ProviderType(known["type"]) if known else ProviderType.CUSTOM
     provider_config = ProviderConfig(
         name=provider_type,
         api_key=api_key,
@@ -332,68 +290,54 @@ def add_provider(name: str | None, api_base: str | None, api_key: str,
     )
 
     mgr.add(provider_config, key=provider_key)
-
-    if len(config.providers) == 1:
-        mgr.set_default(provider_key)
-        click.echo(f"  已设为默认 Provider")
-
     mgr.save()
-    click.echo(f"  ✓ Provider '{provider_key}' → {cfg_path}")
+    _refresh_env_cache(provider_key)
+    click.echo(f"  ✓ Provider '{provider_key}' ({provider_type.value}) → {cfg_path}")
 
 
-# ── provider models ──
+# ── provider reload ──
 
 
-@provider_group.command(name="models")
+@provider_group.command(name="reload")
 @click.argument("name")
-@click.option("--refresh", "-r", is_flag=True, default=False, help="重新从 API 拉取模型列表")
-def list_models(name: str, refresh: bool):
-    """查看 / 刷新 Provider 的可用模型.
+def reload_models(name: str):
+    """从 API 重新拉取 Provider 模型列表.
 
     \b
     示例:
-      lmswitch provider models my-proxy
-      lmswitch provider models my-proxy --refresh
+      lmswitch provider reload deepseek
     """
     config, cfg_path = ensure_config_exists()
     mgr = ProviderManager(config)
 
     provider = mgr.get(name)
     if provider is None:
-        click.echo(f"错误: Provider '{name}' 未配置")
+        click.secho(f"Provider '{name}' 未配置", fg="red")
         sys.exit(1)
 
-    if refresh:
-        if "openai" not in provider.endpoints:
-            click.echo(f"  ⚠ 无 OpenAI endpoint，无法拉取模型")
-            return
-        click.echo(f"  从 API 拉取模型列表...")
-        new_models = _fetch_models(provider.endpoints["openai"], provider.api_key)
-        if new_models:
-            provider.models = new_models
-            provider.default_model = new_models[0]
-            mgr.add(provider, key=name)
-            mgr.save()
-            click.echo(f"  ✓ 更新了 {len(new_models)} 个模型 → {cfg_path}")
-        else:
-            click.echo(f"  ⚠ 无法拉取模型列表，保留现有 {len(provider.models)} 个模型")
-            return
-
-    if not provider.models:
-        click.echo("(无)")
+    if "openai" not in provider.endpoints:
+        click.secho("无 OpenAI endpoint，无法拉取模型", fg="yellow")
         return
 
-    click.echo(f"  {name} — 可用模型 ({len(provider.models)}):")
-    click.echo()
-    for m in provider.models:
-        mark = " ★" if m == provider.default_model else ""
-        click.echo(f"    {m}{mark}")
+    click.echo(f"  从 API 拉取模型列表...")
+    new_models = _fetch_models(provider.endpoints["openai"], provider.api_key)
+    if new_models:
+        provider.models = new_models
+        provider.default_model = new_models[0]
+        mgr.add(provider, key=name)
+        mgr.save()
+        click.echo(f"  ✓ 更新 {len(new_models)} 个模型 → {cfg_path}")
+        for m in new_models:
+            click.echo(f"    {m}")
+    else:
+        click.secho(f"  ⚠ 无法拉取模型，保留现有 {len(provider.models)} 个", fg="yellow")
+    _refresh_env_cache(name)
 
 
 # ── provider rm ──
 
 
-@provider_group.command(name="rm")
+@provider_group.command(name="remove")
 @click.argument("name")
 def remove_provider(name: str):
     """删除 Provider 配置."""
@@ -406,24 +350,6 @@ def remove_provider(name: str):
         sys.exit(1)
     mgr.save()
     click.echo(f"  ✓ Provider '{name}' 已移除")
-
-
-# ── provider set-default ──
-
-
-@provider_group.command(name="set-default")
-@click.argument("name")
-def set_default_provider(name: str):
-    """设置默认 Provider."""
-    config, cfg_path = ensure_config_exists()
-    mgr = ProviderManager(config)
-    try:
-        mgr.set_default(name)
-    except KeyError as e:
-        click.echo(f"错误: {e}")
-        sys.exit(1)
-    mgr.save()
-    click.echo(f"  ✓ 默认 Provider → {name}")
 
 
 # ── provider show ──

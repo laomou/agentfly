@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from lmswitch.agents.codex import CodexAdapter
+from lmswitch.agents.codex import Codex
 from lmswitch.models.schema import AgentConfig, ProviderConfig, ResolvedConfig
 from lmswitch.models.types import AgentType, ProviderType
 
@@ -28,23 +28,23 @@ def make_codex_config():
     )
 
 
-class TestCodexAdapter:
+class TestCodex:
     """Codex 适配器测试."""
 
     def test_identity(self):
-        adapter = CodexAdapter()
+        adapter = Codex()
         assert adapter.name == AgentType.CODEX
         assert adapter.display_name == "Codex"
 
     def test_env_vars(self):
-        adapter = CodexAdapter()
+        adapter = Codex()
         env = adapter.env_vars(make_codex_config())
 
         assert env["OPENAI_API_KEY"] == "sk-test"
         assert "OPENAI_BASE_URL" in env
 
     def test_launch_command(self):
-        adapter = CodexAdapter()
+        adapter = Codex()
         config = make_codex_config()
         cmd = adapter.launch_command(config)
 

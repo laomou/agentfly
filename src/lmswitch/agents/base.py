@@ -1,4 +1,4 @@
-"""Agent 适配器抽象基类."""
+"""Agent 基类."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from lmswitch.models.schema import ResolvedConfig
 from lmswitch.models.types import AgentType
 
 
-class AgentAdapter(ABC):
-    """Agent 适配器基类.
+class Agent(ABC):
+    """Agent 基类.
 
     每个 AI Agent 实现此接口，定义:
     - 需要哪些环境变量
@@ -24,10 +24,6 @@ class AgentAdapter(ABC):
 
     def env_vars(self, config: ResolvedConfig) -> dict[str, str]:
         """返回该 Agent 需要的环境变量字典."""
-        return {}
-
-    def config_files(self, config: ResolvedConfig) -> dict[str, str]:
-        """返回需要写入的配置文件 {路径: 内容}."""
         return {}
 
     @abstractmethod

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from lmswitch.models.schema import ProviderConfig
 from lmswitch.models.types import ProviderType
 from lmswitch.providers.manager import ProviderManager
@@ -38,16 +39,8 @@ class TestProviderManager:
         with pytest.raises(KeyError):
             mgr.remove("nonexistent")
 
-    def test_set_default(self, unified_config):
-        mgr = ProviderManager(unified_config)
-        mgr.set_default("anthropic")
-        assert unified_config.default_provider == "anthropic"
-
     def test_get(self, unified_config):
         mgr = ProviderManager(unified_config)
         provider = mgr.get("anthropic")
         assert provider is not None
         assert provider.name == ProviderType.ANTHROPIC
-
-
-import pytest

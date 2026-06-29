@@ -1,11 +1,11 @@
 """Cline Agent 适配器."""
 
-from lmswitch.agents.base import AgentAdapter
+from lmswitch.agents.base import Agent
 from lmswitch.models.schema import ResolvedConfig
 from lmswitch.models.types import AgentType
 
 
-class ClineAdapter(AgentAdapter):
+class Cline(Agent):
     """Cline — VS Code AI 编程助手.
 
     支持 OpenAI / Anthropic，通过环境变量配置.
@@ -31,4 +31,4 @@ class ClineAdapter(AgentAdapter):
         return env
 
     def launch_command(self, config: ResolvedConfig) -> list[str]:
-        return ["cline"] + config.agent.extra_args
+        return ["cline"]

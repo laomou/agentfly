@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 import httpx
 
@@ -18,6 +19,7 @@ class Provider(ABC):
     每个 Provider 负责:
     - 列出可用模型
     - 测试模型连通性和延迟 (stream 模式测 TTFT + 吞吐)
+    - 为不同 Agent 提供 Provider 特定的环境变量
     """
 
     name: ProviderType
@@ -25,6 +27,44 @@ class Provider(ABC):
 
     def __init__(self, config: ProviderConfig):
         self.config = config
+
+    _ENV_CACHE: dict[str, dict] = {}
+
+    def env_for(self, agent_name: str) -> dict[str, str]:
+        """返回该 Provider 给指定 Agent 的补充环境变量.
+
+        读取顺序:
+        1. ~/.config/lmswitch/env/{name}.json (provider add/reload 缓存)
+        2. 包内 providers/{name}.json (默认)
+
+        Args:
+            agent_name: Agent 名称 (如 "claude-code").
+
+        Returns:
+            环境变量字典，无配置时返回 {}.
+        """
+        name = self.name.value
+        key = f"{name}:{agent_name}"
+        if key in self._ENV_CACHE:
+            return self._ENV_CACHE[key]
+
+        # 用户缓存 → 包默认
+        candidates = [
+            Path.home() / ".config" / "lmswitch" / "env" / f"{name}.json",
+            Path(__file__).parent / f"{name}.json",
+        ]
+        for env_file in candidates:
+            if env_file.exists():
+                try:
+                    data = json.loads(env_file.read_text())
+                    result = data.get(agent_name, {})
+                    self._ENV_CACHE[key] = result
+                    return result
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+        self._ENV_CACHE[key] = {}
+        return {}
 
     @abstractmethod
     def list_models(self) -> list[str]:
@@ -42,7 +82,10 @@ class Provider(ABC):
         ...
 
     def _parse_stream_chunk(self, line: str) -> str | None:
-        """解析 SSE 流中的一行，返回 delta content 或 None."""
+        """解析 SSE 流中的一行，返回 delta content 或 None.
+
+        兼容 reasoning 模型（先出 reasoning_content 再出 content）.
+        """
         if line.startswith("data: "):
             data_str = line[6:]
             if data_str == "[DONE]":
@@ -52,7 +95,8 @@ class Provider(ABC):
                 choices = chunk.get("choices", [])
                 if choices:
                     delta = choices[0].get("delta", {})
-                    return delta.get("content", "")
+                    # reasoning 模型: 先取 reasoning_content，再取 content
+                    return delta.get("content") or delta.get("reasoning_content") or ""
             except json.JSONDecodeError:
                 pass
         return None
@@ -87,14 +131,14 @@ class Provider(ABC):
                 ) as resp:
                     if resp.status_code in (401, 403):
                         return TestResult(
-                            provider=self.name, model=model,
+                            provider=self.config.name, model=model,
                             status="unauthorized",
                             error_message=f"HTTP {resp.status_code}",
                         )
 
                     if resp.status_code != 200:
                         return TestResult(
-                            provider=self.name, model=model,
+                            provider=self.config.name, model=model,
                             status="error",
                             error_message=f"HTTP {resp.status_code}",
                         )
@@ -113,7 +157,7 @@ class Provider(ABC):
             tps = token_count / total_s if total_s > 0 else 0
 
             return TestResult(
-                provider=self.name,
+                provider=self.config.name,
                 model=model,
                 status="ok",
                 latency_ms=round(total_ms, 1),
@@ -123,19 +167,19 @@ class Provider(ABC):
 
         except httpx.TimeoutException:
             return TestResult(
-                provider=self.name, model=model,
+                provider=self.config.name, model=model,
                 status="timeout",
                 error_message="请求超时 (30s)",
             )
         except httpx.ConnectError:
             return TestResult(
-                provider=self.name, model=model,
+                provider=self.config.name, model=model,
                 status="error",
                 error_message="无法连接",
             )
         except Exception as e:
             return TestResult(
-                provider=self.name, model=model,
+                provider=self.config.name, model=model,
                 status="error",
                 error_message=str(e)[:200],
             )

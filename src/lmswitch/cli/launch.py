@@ -6,8 +6,9 @@ import sys
 
 import click
 
+from lmswitch import __version__
 from lmswitch.agents.registry import get_registry
-from lmswitch.core.config import load_config, ensure_config_exists
+from lmswitch.core.config import ensure_config_exists
 from lmswitch.core.launcher import AgentLauncher, LaunchError
 from lmswitch.core.resolver import ConfigResolver
 from lmswitch.models.schema import AgentConfig
@@ -19,14 +20,12 @@ from lmswitch.models.types import AgentType
 @click.option("--provider", "-P", default=None, help="指定 Provider (覆盖 YAML 绑定)")
 @click.option("--model", "-m", default=None, help="覆盖默认模型")
 @click.option("--project", "-p", default=None, help="指定项目/工作目录")
-@click.option("--dry-run", is_flag=True, default=False, help="仅预览启动配置，不实际启动")
 @click.option("--list", "list_agents", is_flag=True, default=False, help="列出所有可启动的 Agent")
 def launch(
     agent_name: str | None,
     provider: str | None,
     model: str | None,
     project: str | None,
-    dry_run: bool,
     list_agents: bool,
 ) -> None:
     """启动 AI Agent.
@@ -36,7 +35,6 @@ def launch(
       lmswitch launch claude-code                           # 使用 YAML 绑定的 Provider
       lmswitch launch codex --provider deepseek             # 直接指定 Provider
       lmswitch launch claude-code --model claude-opus-4-8   # 覆盖模型
-      lmswitch launch claude-code --dry-run                 # 预览配置
       lmswitch launch --list                                # 列出 Agent
     """
     registry = get_registry()
@@ -59,7 +57,7 @@ def launch(
     config, _ = ensure_config_exists()
 
     # ── provider 选择逻辑 ──
-    # 1. --provider 显式指定 > 2. YAML agent 绑定 > 3. 默认 provider
+    # 1. --provider 显式指定 > 2. YAML agent 绑定 > 3. 第一个 provider
     if provider:
         provider_key = provider
         # 创建临时 AgentConfig（不写入 YAML）
@@ -72,12 +70,13 @@ def launch(
         if agent_name not in config.agents:
             config.agents[agent_name] = agent_cfg
     else:
-        provider_key = config.agents.get(agent_name, AgentConfig(name=AgentType(agent_name), provider="")).provider
-        if not provider_key:
-            provider_key = config.default_provider
-        if not provider_key:
-            click.secho("未指定 Provider。请用 --provider 或先配置默认 Provider", fg="red")
-            click.echo("  lmswitch provider add <name> --api-base <url> --api-key <key>")
+        agent_cfg = config.agents.get(agent_name)
+        if agent_cfg and agent_cfg.provider:
+            provider_key = agent_cfg.provider
+        elif config.providers:
+            provider_key = next(iter(config.providers))
+        else:
+            click.secho("无可用 Provider。请运行 'lmswitch provider add'", fg="red")
             sys.exit(1)
 
     # 解析配置
@@ -97,15 +96,8 @@ def launch(
 
     launcher = AgentLauncher(adapter)
 
-    if dry_run:
-        launcher.launch(resolved, dry_run=True)
-        return
-
-    click.echo(f"  Agent:    {adapter.display_name} ({adapter.name.value})")
-    click.echo(f"  Provider: {provider_key}")
-    click.echo(f"  Format:   {resolved.effective_api_format}")
-    click.echo(f"  Endpoint: {resolved.effective_api_base}")
-    click.echo(f"  Model:    {resolved.agent.model}")
+    click.echo(f"  LMSwitch v{__version__}")
+    click.echo(f"  {adapter.display_name} · {provider_key}")
     click.echo()
 
     try:

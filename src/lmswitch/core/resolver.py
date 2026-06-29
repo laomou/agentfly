@@ -50,9 +50,6 @@ def _resolve_provider(provider: ProviderConfig) -> ProviderConfig:
         endpoints=provider.endpoints,
         models=provider.models,
         default_model=provider.default_model,
-        extra_env={
-            k: _resolve_env_ref(v) for k, v in provider.extra_env.items()
-        },
     )
 
 
@@ -113,9 +110,7 @@ class ConfigResolver:
         # 2. 确定 provider_key
         pk = provider_key or (agent.provider if agent else "")
         if not pk:
-            pk = self._config.default_provider
-        if not pk:
-            raise KeyError("未指定 Provider，且无默认 Provider")
+            pk = next(iter(self._config.providers)) if self._config.providers else ""
 
         # 3. 查找 ProviderConfig
         provider = self._config.providers.get(pk)
@@ -137,8 +132,6 @@ class ConfigResolver:
                 name=agent.name,
                 provider=pk,
                 model=agent.model or resolved_provider.default_model,
-                extra_args=agent.extra_args,
-                env_overrides=agent.env_overrides,
             )
         else:
             resolved_agent = AgentConfig(
@@ -153,17 +146,6 @@ class ConfigResolver:
             effective_api_base=api_base,
             effective_api_format=preferred_format,
         )
-
-    def resolve_all(self) -> dict[str, ResolvedConfig]:
-        """解析所有已配置 Agent 的配置.
-
-        Returns:
-            {agent_name: ResolvedConfig} 映射.
-        """
-        return {
-            name: self.resolve(name)
-            for name in self._config.agents
-        }
 
     def get_provider(self, provider_name: str | ProviderType) -> ProviderConfig:
         """获取单个 Provider 配置（已解析环境变量）."""

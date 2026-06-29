@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from lmswitch.models.types import AgentType, ProviderType
 
@@ -16,6 +16,8 @@ from lmswitch.models.types import AgentType, ProviderType
 class ProviderConfig(BaseModel):
     """单个服务提供商的配置."""
 
+    model_config = ConfigDict(extra="ignore")
+
     name: ProviderType = Field(description="Provider 类型")
     api_key: str = Field(description="API Key，支持 ${ENV_VAR} 引用")
     endpoints: dict[str, str] = Field(
@@ -24,9 +26,6 @@ class ProviderConfig(BaseModel):
     )
     models: list[str] = Field(default_factory=list, description="可用模型列表")
     default_model: str = Field(default="", description="默认模型")
-    extra_env: dict[str, str] = Field(
-        default_factory=dict, description="额外环境变量"
-    )
 
     @field_validator("default_model", mode="before")
     @classmethod
@@ -44,15 +43,11 @@ class ProviderConfig(BaseModel):
 class AgentConfig(BaseModel):
     """单个 Agent 的配置."""
 
+    model_config = ConfigDict(extra="ignore")
+
     name: AgentType = Field(description="Agent 名称")
     provider: str = Field(description="绑定的 Provider 键名 (如 'anthropic' / 'my-proxy')")
     model: Optional[str] = Field(default=None, description="覆盖默认模型")
-    extra_args: list[str] = Field(
-        default_factory=list, description="启动时的额外 CLI 参数"
-    )
-    env_overrides: dict[str, str] = Field(
-        default_factory=dict, description="环境变量覆盖"
-    )
 
 
 # ──────────────────────────────────────────
@@ -63,10 +58,9 @@ class AgentConfig(BaseModel):
 class UnifiedConfig(BaseModel):
     """用户统一配置文件 (~/.config/lmswitch/config.yaml) 的完整模型."""
 
+    model_config = ConfigDict(extra="ignore")
+
     version: str = Field(default="1", description="配置版本")
-    default_provider: str = Field(
-        default="", description="默认 Provider 键名"
-    )
     providers: dict[str, ProviderConfig] = Field(
         default_factory=dict, description="Provider 配置映射"
     )
@@ -81,7 +75,7 @@ class UnifiedConfig(BaseModel):
 
 
 class ResolvedConfig(BaseModel):
-    """解析后的完整配置 — 供 AgentAdapter 使用.
+    """解析后的完整配置 — 供 Agent 使用.
 
     所有 ${ENV_VAR} 引用已被解析为真实值.
     """

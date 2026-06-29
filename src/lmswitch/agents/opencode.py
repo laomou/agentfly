@@ -1,11 +1,11 @@
 """OpenCode Agent 适配器."""
 
-from lmswitch.agents.base import AgentAdapter
+from lmswitch.agents.base import Agent
 from lmswitch.models.schema import ResolvedConfig
 from lmswitch.models.types import AgentType
 
 
-class OpenCodeAdapter(AgentAdapter):
+class OpenCode(Agent):
     """OpenCode — 开源 AI 编程 Agent."""
 
     name = AgentType.OPENCODE
@@ -21,4 +21,4 @@ class OpenCodeAdapter(AgentAdapter):
         return env
 
     def launch_command(self, config: ResolvedConfig) -> list[str]:
-        return ["opencode"] + config.agent.extra_args
+        return ["opencode"]

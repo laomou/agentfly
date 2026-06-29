@@ -8,7 +8,6 @@ class ProviderType(str, Enum):
 
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
-    GOOGLE = "google"
     DEEPSEEK = "deepseek"
     CUSTOM = "custom"
 

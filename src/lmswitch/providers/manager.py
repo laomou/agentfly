@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from lmswitch.core.config import ensure_config_exists, save_config
+from lmswitch.core.config import save_config
 from lmswitch.models.schema import ProviderConfig, UnifiedConfig
 from lmswitch.models.types import ProviderType
 
@@ -46,15 +46,6 @@ class ProviderManager:
         if name not in self._config.providers:
             raise KeyError(f"Provider '{name}' 未配置")
         del self._config.providers[name]
-
-    def set_default(self, name: str | ProviderType) -> None:
-        """设置默认 Provider."""
-        if isinstance(name, ProviderType):
-            name = name.value
-        if name not in self._config.providers:
-            raise KeyError(f"Provider '{name}' 未配置")
-        # 存储字符串键名，不是 ProviderType
-        self._config.default_provider = name
 
     def save(self) -> None:
         """持久化到配置文件."""

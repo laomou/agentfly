@@ -44,13 +44,13 @@ lmswitch = "lmswitch.main:cli"
 
 [project.entry-points."lmswitch.agents"]
 claude = "lmswitch.agents.claude:ClaudeAdapter"
-claude-code = "lmswitch.agents.claude_code:ClaudeCodeAdapter"
-cline = "lmswitch.agents.cline:ClineAdapter"
-codex = "lmswitch.agents.codex:CodexAdapter"
-droid = "lmswitch.agents.droid:DroidAdapter"
-opencode = "lmswitch.agents.opencode:OpenCodeAdapter"
-openclaw = "lmswitch.agents.openclaw:OpenClawAdapter"
-pi = "lmswitch.agents.pi:PiAdapter"
+claude-code = "lmswitch.agents.claude_code:ClaudeCode"
+cline = "lmswitch.agents.cline:Cline"
+codex = "lmswitch.agents.codex:Codex"
+droid = "lmswitch.agents.droid:Droid"
+opencode = "lmswitch.agents.opencode:OpenCode"
+openclaw = "lmswitch.agents.openclaw:OpenClaw"
+pi = "lmswitch.agents.pi:Pi"
 
 [tool.setuptools.packages.find]
 where = ["src"]

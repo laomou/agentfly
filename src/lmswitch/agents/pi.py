@@ -1,11 +1,11 @@
 """Pi Agent 适配器."""
 
-from lmswitch.agents.base import AgentAdapter
+from lmswitch.agents.base import Agent
 from lmswitch.models.schema import ResolvedConfig
 from lmswitch.models.types import AgentType
 
 
-class PiAdapter(AgentAdapter):
+class Pi(Agent):
     """Pi — AI 编程 Agent."""
 
     name = AgentType.PI
@@ -21,4 +21,4 @@ class PiAdapter(AgentAdapter):
         return env
 
     def launch_command(self, config: ResolvedConfig) -> list[str]:
-        return ["pi"] + config.agent.extra_args
+        return ["pi"]
