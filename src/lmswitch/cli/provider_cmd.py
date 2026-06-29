@@ -243,7 +243,9 @@ def add_provider(name: str | None, api_base: str | None, api_key: str,
         if not click.confirm(f"Provider '{provider_key}' 已存在，是否覆盖?"):
             return
 
-    # ── API Key 安全处理 ──
+    # ── API Key ──
+    if not api_key:
+        api_key = click.prompt("API Key", hide_input=True)
     if _is_plaintext_key(api_key):
         click.echo()
         click.secho("  ⚠ 明文 API Key 会直接写入配置文件，不安全", fg="yellow")

@@ -29,9 +29,9 @@ def test(target: str | None, output_format: str) -> None:
 
     \b
     示例:
-      lmswitch test                           # 所有 Provider 默认模型
+      lmswitch test                           # 全部 Provider 所有模型
       lmswitch test deepseek                  # DeepSeek 所有模型
-      lmswitch test deepseek:deepseek-chat    # 指定 Provider:Model
+      lmswitch test deepseek:deepseek-chat    # 指定模型
       lmswitch test --format json             # JSON 输出
     """
     config, _ = ensure_config_exists()
@@ -42,19 +42,22 @@ def test(target: str | None, output_format: str) -> None:
         results = _test_model(config, pn, model)
     elif target:
         results = _test_provider_models(config, target)
+    if results and output_format == "json":
+        click.echo(json.dumps([r.model_dump(mode="json") for r in results], indent=2, ensure_ascii=False))
+    elif results:
+        _print_results_table(results)
     else:
         for pk, pc in config.providers.items():
             p = _make_provider(pc)
             if p is None:
                 continue
-            model = pc.default_model or (pc.models[0] if pc.models else "")
-            if model:
-                results.append(p.test_model(model, pc.api_key, api_base=_first_endpoint(pc)))
-
-    if output_format == "json":
-        click.echo(json.dumps([r.model_dump(mode="json") for r in results], indent=2, ensure_ascii=False))
-    else:
-        _print_results_table(results)
+            click.echo(f"  [{pk}]")
+            for model in (pc.models or p.list_models()):
+                if model:
+                    r = p.test_model(model, pc.api_key, api_base=_first_endpoint(pc))
+                    results.append(r)
+                    click.echo(f"    {_status_icon(r.status)} {model:<28} {_fmt_ms(r.latency_ms):>6}  {_fmt_ms(r.ttft_ms):>6}  {_fmt_tps(r.tokens_per_sec):>6}")
+            click.echo()
 
 
 def _test_model(config, provider_name: str, model: str) -> list[TestResult]:
