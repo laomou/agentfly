@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lmswitch"
+version = "0.1.0"
+description = "AI Agent 客制化配置中心 — 统一管理多 Agent 配置，一键启动"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    {name = "mourui"}
+]
+keywords = ["ai-agent", "cli", "claude-code", "codex", "configuration"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+urls = {Repository = "https://github.com/laomou/LMSwitch"}
+
+dependencies = [
+    "click>=8.0",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "httpx>=0.24",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-mock>=3.10",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+lmswitch = "lmswitch.main:cli"
+
+[project.entry-points."lmswitch.agents"]
+claude = "lmswitch.agents.claude:ClaudeAdapter"
+claude-code = "lmswitch.agents.claude_code:ClaudeCodeAdapter"
+cline = "lmswitch.agents.cline:ClineAdapter"
+codex = "lmswitch.agents.codex:CodexAdapter"
+droid = "lmswitch.agents.droid:DroidAdapter"
+opencode = "lmswitch.agents.opencode:OpenCodeAdapter"
+openclaw = "lmswitch.agents.openclaw:OpenClawAdapter"
+pi = "lmswitch.agents.pi:PiAdapter"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
