@@ -34,7 +34,7 @@ class OpenClaw(Agent):
         env = {}
         if api_key_env := mapping.get("api_key_env"):
             env[api_key_env] = config.provider.api_key
-        if base_url_env := mapping.get("base_url_env") and config.effective_api_base:
+        if (base_url_env := mapping.get("base_url_env")) and config.effective_api_base:
             env[base_url_env] = config.effective_api_base
         if config.agent.model:
             env["OPENCLAW_MODEL"] = config.agent.model
