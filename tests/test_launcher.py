@@ -89,3 +89,21 @@ class TestLaunch:
         monkeypatch.setattr(launcher_mod.subprocess, "Popen", boom)
         with pytest.raises(LaunchError):
             AgentLauncher(_FakeAdapter()).launch(_resolved())
+
+    def test_post_launch_runs_even_on_popen_failure(self, monkeypatch):
+        # 保证 ScopedConfigFile.restore 这类清理在启动失败时也会执行
+        calls = []
+
+        class _RestoringAdapter(_FakeAdapter):
+            def post_launch(self):
+                calls.append(1)
+
+        def boom(*a, **k):
+            raise OSError("nope")
+
+        monkeypatch.setattr(launcher_mod.shutil, "which", lambda c: "/usr/bin/fakebin")
+        monkeypatch.setattr(launcher_mod, "get_provider", lambda pc: _FakeProvider())
+        monkeypatch.setattr(launcher_mod.subprocess, "Popen", boom)
+        with pytest.raises(LaunchError):
+            AgentLauncher(_RestoringAdapter()).launch(_resolved())
+        assert calls == [1]

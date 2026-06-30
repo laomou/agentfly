@@ -83,9 +83,11 @@ class AgentLauncher:
                 stderr=sys.stderr,
             )
             proc.wait()
-            self._adapter.post_launch()
-
             return proc.returncode
 
         except Exception as e:
             raise LaunchError(f"启动 {self._adapter.name} 失败: {e}")
+        finally:
+            # 无论成功/失败都跑 post_launch（含 ScopedConfigFile 还原），
+            # 避免启动失败时临时写入的配置残留在用户目录
+            self._adapter.post_launch()

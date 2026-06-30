@@ -91,7 +91,11 @@ def test_codex_base_url_has_v1():
     assert env["OPENAI_BASE_URL"].endswith("/v1")
 
 
-def test_opencode_base_url_v1_and_no_model_env():
+def test_opencode_config_content_has_v1():
+    import json
     env = OpenCode().env_vars(_resolved_for(OpenCode()))
-    assert env["OPENAI_BASE_URL"].endswith("/v1")
-    assert "OPENCODE_MODEL" not in env
+    assert "OPENAI_BASE_URL" not in env  # 改用 OPENCODE_CONFIG_CONTENT，不落 env base url
+    cfg = json.loads(env["OPENCODE_CONFIG_CONTENT"])
+    opts = cfg["provider"]["lmswitch"]["options"]
+    assert opts["baseURL"].endswith("/v1")
+    assert opts["apiKey"]
