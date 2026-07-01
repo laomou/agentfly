@@ -127,31 +127,26 @@ def _detect_protocols(api_base: str, api_key: str) -> set[str]:
     return protocols
 
 
-def _fetch_models(api_base: str, api_key: str, api_format: str = "openai") -> list[str]:
+def _fetch_models(api_base: str, api_key: str) -> list[str]:
     """从 API 拉取可用模型列表 (OpenAI 兼容 GET /v1/models)."""
     base = api_base.rstrip("/")
-
     with httpx.Client(timeout=httpx.Timeout(10.0)) as client:
-        if api_format == "openai":
-            try:
-                resp = client.get(
-                    f"{base}/v1/models",
-                    headers={"Authorization": f"Bearer {api_key}"},
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    models = [m["id"] for m in data.get("data", [])]
-                    # 过滤：只保留 chat/language 模型
-                    return sorted(
-                        [m for m in models if not any(
-                            x in m for x in ["embedding", "moderation", "dall-e", "whisper", "tts"]
-                        )]
+        try:
+            resp = client.get(
+                f"{base}/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            if resp.status_code == 200:
+                models = [m["id"] for m in resp.json().get("data", [])]
+                # 过滤非 chat 模型
+                return sorted(
+                    m for m in models if not any(
+                        x in m for x in ["embedding", "moderation", "dall-e", "whisper", "tts"]
                     )
-            except Exception:
-                pass
-
-        # Anthropic 或拉取失败：返回空，用户手动指定
-        return []
+                )
+        except Exception:
+            pass
+    return []
 
 
 # ──────────────────────────────────────────
@@ -209,6 +204,40 @@ def _auto_name(api_base: str) -> str:
         port = m.group(1).split(":")[1] if ":" in m.group(1) else "8000"
         return f"localhost:{port}"
     return host
+
+
+def _resolve_protocols(api_base: str, api_key: str, known: dict | None) -> set[str]:
+    """确定支持的协议: 明文 key 时探测, 合并已知默认, 都没有则手动选择."""
+    if _is_plaintext_key(api_key):
+        click.echo("  探测 API 协议...")
+        protocols = _detect_protocols(api_base, api_key)
+    else:
+        protocols = set()
+        click.echo(f"  ${api_key[2:-1]} 环境变量引用，跳过探测")
+
+    if known:
+        for fmt in known.get("endpoints", {}):
+            if fmt not in protocols:
+                protocols.add(fmt)
+                click.echo(f"  + {fmt} (已知默认)")
+        click.echo(f"  ✓ 协议: {', '.join(sorted(protocols))}")
+        return protocols
+
+    if protocols:
+        click.echo(f"  ✓ 可用协议: {', '.join(sorted(protocols))}")
+        return protocols
+
+    click.echo("  ⚠ 无法自动探测，手动选择协议")
+    fmt_str = click.prompt("API 协议 (openai/anthropic, 逗号分隔)", default="openai")
+    picked = {f.strip() for f in fmt_str.split(",") if f.strip() in ("openai", "anthropic")}
+    return picked or {"openai"}
+
+
+def _build_endpoints(known: dict | None, protocols: set[str], api_base: str) -> dict[str, str]:
+    """已知厂商用其 endpoints (各接口专属 URL); 自定义则协议都指向同一 api_base."""
+    if known and known.get("endpoints"):
+        return dict(known["endpoints"])
+    return {p: api_base for p in protocols}
 
 
 @provider_group.command(name="add")
@@ -278,38 +307,14 @@ def add_provider(name: str | None, api_base: str | None, api_key: str | None,
     else:
         click.echo(f"  ✓ Key: {api_key}")
 
-    # ── 自动探测 endpoints ──
+    # ── 探测协议 + 拉取模型 ──
     model_list: list[str] = []
     if models:
         model_list = [m.strip() for m in models.split(",") if m.strip()]
 
-    if _is_plaintext_key(api_key):
-        click.echo(f"  探测 API 协议...")
-        protocols = _detect_protocols(api_base, api_key)
-    else:
-        protocols: set[str] = set()
-        click.echo(f"  ${api_key[2:-1]} 环境变量引用，跳过探测")
-    if known:
-        for fmt in known.get("endpoints", {}):
-            if fmt not in protocols:
-                protocols.add(fmt)
-                click.echo(f"  + {fmt} (已知默认)")
-        click.echo(f"  ✓ 协议: {', '.join(sorted(protocols))}")
-    elif protocols:
-        click.echo(f"  ✓ 可用协议: {', '.join(sorted(protocols))}")
-    else:
-        click.echo(f"  ⚠ 无法自动探测，手动选择协议")
-        fmt_str = click.prompt("API 协议 (openai/anthropic, 逗号分隔)", default="openai")
-        protocols = set()
-        for f in fmt_str.split(","):
-            f = f.strip()
-            if f in ("openai", "anthropic"):
-                protocols.add(f)
-        if not protocols:
-            protocols = {"openai"}
+    protocols = _resolve_protocols(api_base, api_key, known)
 
-    # ── 拉取模型 ──
-    if not model_list and not protocols.isdisjoint({"openai", ""}) and _is_plaintext_key(api_key):
+    if not model_list and "openai" in protocols and _is_plaintext_key(api_key):
         click.echo(f"  拉取可用模型...")
         model_list = _fetch_models(api_base, api_key)
         if model_list:
@@ -321,11 +326,7 @@ def add_provider(name: str | None, api_base: str | None, api_key: str | None,
     default_model = model_list[0] if model_list else ""
 
     provider_type = ProviderType(known["type"]) if known else ProviderType.CUSTOM
-    # 已知厂商用其 endpoints (含各接口专属 URL); 自定义则探测到的协议都指向 api_base
-    if known and known.get("endpoints"):
-        endpoints = dict(known["endpoints"])
-    else:
-        endpoints = {p: api_base for p in protocols}
+    endpoints = _build_endpoints(known, protocols, api_base)
     provider_config = ProviderConfig(
         name=provider_type,
         api_key=api_key,

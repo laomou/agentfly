@@ -28,13 +28,6 @@ class CustomProvider(Provider):
     def list_models(self) -> list[str]:
         return self.config.model_names
 
-    def _build_test_request(self, model: str) -> dict:
-        return {
-            "model": model,
-            "max_tokens": 64,
-            "messages": [{"role": "user", "content": "hi"}],
-        }
-
     def _on_results(self, model: str, api_types: list[str]) -> None:
         """缓存跑通的接口 (base 测试结束时回调)."""
         val = ",".join(api_types)

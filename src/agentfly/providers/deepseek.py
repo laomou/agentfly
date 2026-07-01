@@ -18,10 +18,3 @@ class DeepSeekProvider(Provider):
 
     def list_models(self) -> list[str]:
         return self.config.model_names
-
-    def _build_test_request(self, model: str) -> dict:
-        return {
-            "model": model,
-            "max_tokens": 64,
-            "messages": [{"role": "user", "content": "hi"}],
-        }

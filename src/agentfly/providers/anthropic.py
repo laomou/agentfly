@@ -24,13 +24,6 @@ class AnthropicProvider(Provider):
     def list_models(self) -> list[str]:
         return ANTHROPIC_MODELS
 
-    def _build_test_request(self, model: str) -> dict:
-        return {
-            "model": model,
-            "max_tokens": 64,
-            "messages": [{"role": "user", "content": "hi"}],
-        }
-
     def _parse_stream_chunk(self, line: str) -> str | None:
         """Anthropic SSE: content_block_delta 的 text_delta / thinking_delta."""
         if not line.startswith("data: "):

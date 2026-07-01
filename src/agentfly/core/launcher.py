@@ -44,10 +44,10 @@ class AgentLauncher:
         Args:
             resolved: 已解析的配置.
             cwd: 工作目录.
-            dry_run: 仅预览，不实际启动.
+            extra_args: 透传给 Agent 的额外命令行参数.
 
         Returns:
-            进程退出码 (dry_run 时返回 0).
+            进程退出码.
 
         Raises:
             LaunchError: 启动失败.

@@ -14,6 +14,10 @@ from agentfly.models.types import ProviderType
 
 _DEFAULT_TIMEOUT_S = 30.0
 
+# 测试请求: 引导一句简短正文, 让推理模型也能吐出正文 (而非只有思考), TPS 更贴近真实
+_TEST_PROMPT = "Hello! Reply in one short sentence."
+_TEST_MAX_TOKENS = 256
+
 # api_type → API 路径
 _PATHS = {
     "anthropic": "/v1/messages",
@@ -87,10 +91,13 @@ class Provider(ABC):
         """返回该 Provider 的已知模型列表."""
         ...
 
-    @abstractmethod
-    def _build_test_request(self, model: str):
-        """构建测试请求 (stream=True 由 test_model 自动添加)."""
-        ...
+    def _build_test_request(self, model: str) -> dict:
+        """构建测试请求 (OpenAI/Anthropic 通用体; stream 由 test_model 追加)."""
+        return {
+            "model": model,
+            "max_tokens": _TEST_MAX_TOKENS,
+            "messages": [{"role": "user", "content": _TEST_PROMPT}],
+        }
 
     def _parse_stream_chunk(self, line: str) -> str | None:
         """解析 SSE 一行 (OpenAI 格式). 兼容 reasoning 模型."""
@@ -194,15 +201,10 @@ class Provider(ABC):
 
             with httpx.Client(timeout=httpx.Timeout(timeout)) as client:
                 with client.stream("POST", url, json=body, headers=headers) as resp:
-                    if resp.status_code in (401, 403):
-                        return result(
-                            status="unauthorized",
-                            status_code=resp.status_code,
-                            error_message=f"HTTP {resp.status_code}",
-                        )
                     if resp.status_code != 200:
+                        status = "unauthorized" if resp.status_code in (401, 403) else "error"
                         return result(
-                            status="error",
+                            status=status,
                             status_code=resp.status_code,
                             error_message=f"HTTP {resp.status_code}",
                         )
@@ -215,7 +217,7 @@ class Provider(ABC):
                         if first_token:
                             ttft_ms = (time.monotonic() - t_start) * 1000
                             first_token = False
-                        token_count += len(content) // 4 or 1
+                        token_count += len(content) // 4 or 1  # 粗略估算 ~4 字符/token
 
             total_ms = (time.monotonic() - t_start) * 1000
             tps = token_count * 1000 / total_ms if total_ms > 0 else 0

@@ -145,7 +145,7 @@ class TestProviderMethods:
         url, headers, t = p._test_candidates("claude-opus-4-8", "k")[0]
         assert url.endswith("/v1/messages") and t == "anthropic"
         assert headers["x-api-key"] == "k"
-        assert p._build_test_request("m")["max_tokens"] == 64
+        assert p._build_test_request("m")["max_tokens"] == 256
         assert p.list_models()  # 非空
 
     def test_deepseek(self):

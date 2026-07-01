@@ -62,7 +62,7 @@ class TestFetchModels:
     def test_filters_and_sorts(self, monkeypatch):
         data = {"data": [{"id": "gpt-4o"}, {"id": "text-embedding-3"}, {"id": "aaa"}]}
         _patch_client(monkeypatch, get=_Resp(200, data))
-        models = pc._fetch_models("http://x", "k", "openai")
+        models = pc._fetch_models("http://x", "k")
         assert "text-embedding-3" not in models  # embedding 被过滤
         assert models == sorted(models)
         assert "gpt-4o" in models and "aaa" in models

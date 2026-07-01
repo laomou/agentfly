@@ -89,7 +89,7 @@ class TestAdd:
 class TestReload:
     def test_reload(self, tmp_cfg_env, monkeypatch):
         monkeypatch.setattr(pc, "ensure_config_exists", lambda: (_cfg(), "p"))
-        monkeypatch.setattr(pc, "_fetch_models", lambda base, key, fmt="openai": ["x", "y"])
+        monkeypatch.setattr(pc, "_fetch_models", lambda base, key: ["x", "y"])
         monkeypatch.setattr(pc, "_refresh_env_cache", lambda key: None)
         r = CliRunner().invoke(reload_models, ["deepseek"])
         assert r.exit_code == 0

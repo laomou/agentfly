@@ -23,10 +23,3 @@ class OpenAIProvider(Provider):
 
     def list_models(self) -> list[str]:
         return OPENAI_MODELS
-
-    def _build_test_request(self, model: str) -> dict:
-        return {
-            "model": model,
-            "max_tokens": 64,
-            "messages": [{"role": "user", "content": "hi"}],
-        }

@@ -118,19 +118,12 @@ class ConfigResolver:
         # 5. 根据 Agent 格式选择正确的 API Base
         api_base = _pick_endpoint(resolved_provider, preferred_format)
 
-        # 6. 合并 agent 配置（agent 可能为 None）
-        if agent:
-            resolved_agent = AgentConfig(
-                name=agent.name,
-                provider=pk,
-                model=agent.model or resolved_provider.default_model,
-            )
-        else:
-            resolved_agent = AgentConfig(
-                name=AgentType(agent_name) if agent_name in AgentType.__members__.values() else AgentType("openai"),
-                provider=pk,
-                model=resolved_provider.default_model,
-            )
+        # 6. 合并 agent 配置 (agent 未在 YAML 定义时按 agent_name 构造)
+        resolved_agent = AgentConfig(
+            name=agent.name if agent else AgentType(agent_name),
+            provider=pk,
+            model=(agent.model if agent else None) or resolved_provider.default_model,
+        )
 
         return ResolvedConfig(
             agent=resolved_agent,
