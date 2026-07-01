@@ -129,6 +129,7 @@ class TestResult(BaseModel):
     provider: str
     model: str
     status: str  # "ok" | "timeout" | "error" | "unauthorized"
+    status_code: int = 0         # HTTP 状态码 (0 = 非 HTTP 错误)
     latency_ms: float = 0.0     # 总响应时间
     ttft_ms: float = 0.0         # Time To First Token
     tokens_per_sec: float = 0.0  # 吞吐量 (tokens/s)

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import threading
 
-from agentfly.models.schema import ModelEntry
+from agentfly.models.schema import ModelEntry, ProviderConfig
 from agentfly.models.types import ProviderType
 from agentfly.providers.base import Provider
 
@@ -39,6 +40,11 @@ class CustomProvider(Provider):
     name = ProviderType.CUSTOM
     display_name = "Custom"
 
+    def __init__(self, config: ProviderConfig):
+        super().__init__(config)
+        self._cache_dirty = False        # 本次是否改动了 api_type 缓存
+        self._cache_lock = threading.Lock()  # 保护并发测试对 config.models 的写
+
     def list_models(self) -> list[str]:
         return self.config.model_names
 
@@ -58,14 +64,18 @@ class CustomProvider(Provider):
         return None
 
     def _on_test_ok(self, model: str, ep_key: str, idx: int) -> None:
-        """回退成功 → 缓存 api_type."""
+        """回退成功 (idx>0) → 缓存 api_type; 标记 dirty 供上层决定是否写盘."""
         if idx == 0 or not ep_key:
             return
-        me = self._find_entry(model)
-        if me is not None:
-            me.api_type = ep_key
-        else:
-            self.config.models.append(ModelEntry(name=model, api_type=ep_key))
+        with self._cache_lock:
+            me = self._find_entry(model)
+            if me is not None:
+                if me.api_type == ep_key:
+                    return
+                me.api_type = ep_key
+            else:
+                self.config.models.append(ModelEntry(name=model, api_type=ep_key))
+            self._cache_dirty = True
 
     # ── 候选端点 ──
 

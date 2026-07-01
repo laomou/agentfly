@@ -12,7 +12,7 @@ import httpx
 from agentfly.models.schema import ProviderConfig, TestResult
 from agentfly.models.types import ProviderType
 
-_STREAM_TIMEOUT_S = 30.0
+_DEFAULT_TIMEOUT_S = 30.0
 
 
 class Provider(ABC):
@@ -27,10 +27,9 @@ class Provider(ABC):
     name: ProviderType
     display_name: str = ""
 
-    _ENV_CACHE: dict[str, dict] = {}
-
     def __init__(self, config: ProviderConfig):
         self.config = config
+        self._env_cache: dict[str, dict] = {}  # {agent_name: env}, 实例级避免跨实例泄漏
 
     # ── env ──
 
@@ -39,11 +38,10 @@ class Provider(ABC):
 
         读取顺序: ~/.config/agentfly/env/{name}.json → 包内 providers/{name}.json.
         """
-        name = self.name.value
-        key = f"{name}:{agent_name}"
-        if key in self._ENV_CACHE:
-            return self._ENV_CACHE[key]
+        if agent_name in self._env_cache:
+            return self._env_cache[agent_name]
 
+        name = self.name.value
         for env_file in (
             Path.home() / ".config" / "agentfly" / "env" / f"{name}.json",
             Path(__file__).parent / f"{name}.json",
@@ -53,12 +51,12 @@ class Provider(ABC):
             try:
                 data = json.loads(env_file.read_text())
                 result = data.get(agent_name, {})
-                self._ENV_CACHE[key] = result
+                self._env_cache[agent_name] = result
                 return result
             except (json.JSONDecodeError, OSError):
                 pass
 
-        self._ENV_CACHE[key] = {}
+        self._env_cache[agent_name] = {}
         return {}
 
     # ── 子类契约 ──
@@ -126,10 +124,11 @@ class Provider(ABC):
         api_key: str | None = None,
         api_base: str | None = None,
         provider_key: str = "",
+        timeout: float = _DEFAULT_TIMEOUT_S,
     ) -> TestResult:
         """流式测试模型: TTFT + 吞吐 + 总延迟.
 
-        400/404 自动回退到下一个候选端点; 其他错误直接返回.
+        接口不匹配状态码 (400/404/405/…) 自动回退下一个候选端点; 其他错误直接返回.
         """
         pkey = provider_key or self.config.name.value
         key = api_key or self.config.api_key
@@ -140,7 +139,7 @@ class Provider(ABC):
         last_error = ""
 
         for idx, (url, headers, ep_key) in enumerate(candidates):
-            result = self._do_test(pkey, model, url, body, headers)
+            result = self._do_test(pkey, model, url, body, headers, timeout)
             if result.status == "ok":
                 self._on_test_ok(model, ep_key, idx)
                 return result
@@ -156,6 +155,7 @@ class Provider(ABC):
 
     def _do_test(
         self, pkey: str, model: str, url: str, body: dict, headers: dict,
+        timeout: float = _DEFAULT_TIMEOUT_S,
     ) -> TestResult:
         """执行一次流式测试."""
         def result(**kw) -> TestResult:
@@ -166,12 +166,20 @@ class Provider(ABC):
             ttft_ms = 0.0
             token_count = 0
 
-            with httpx.Client(timeout=httpx.Timeout(_STREAM_TIMEOUT_S)) as client:
+            with httpx.Client(timeout=httpx.Timeout(timeout)) as client:
                 with client.stream("POST", url, json=body, headers=headers) as resp:
                     if resp.status_code in (401, 403):
-                        return result(status="unauthorized", error_message=f"HTTP {resp.status_code}")
+                        return result(
+                            status="unauthorized",
+                            status_code=resp.status_code,
+                            error_message=f"HTTP {resp.status_code}",
+                        )
                     if resp.status_code != 200:
-                        return result(status="error", error_message=f"HTTP {resp.status_code}")
+                        return result(
+                            status="error",
+                            status_code=resp.status_code,
+                            error_message=f"HTTP {resp.status_code}",
+                        )
 
                     first_token = True
                     for line in resp.iter_lines():
@@ -194,16 +202,17 @@ class Provider(ABC):
             )
 
         except httpx.TimeoutException:
-            return result(status="timeout", error_message=f"请求超时 ({int(_STREAM_TIMEOUT_S)}s)")
+            return result(status="timeout", error_message=f"请求超时 ({int(timeout)}s)")
         except httpx.ConnectError:
             return result(status="error", error_message="无法连接")
         except Exception as e:
             return result(status="error", error_message=str(e)[:200])
 
 
+# 这些状态码代表"该接口不支持此模型/请求" → 回退下一个候选端点
+_FALLBACK_STATUS = frozenset({400, 404, 405, 415, 501})
+
+
 def _should_fallback(result: TestResult) -> bool:
-    """只有 400/404 才回退下一个候选."""
-    if result.status != "error":
-        return False
-    msg = result.error_message
-    return "400" in msg or "404" in msg
+    """仅在明确的"接口不匹配"状态码上回退下一个候选."""
+    return result.status == "error" and result.status_code in _FALLBACK_STATUS

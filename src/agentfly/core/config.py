@@ -88,10 +88,14 @@ def save_config(config: UnifiedConfig, path: Optional[str | Path] = None) -> Pat
         sort_keys=False,
     )
 
-    # 写入临时文件后原子替换
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(content, encoding="utf-8")
-    tmp.replace(p)
+    # 写入进程私有临时文件后原子替换 (避免并发写互相踩踏导致半截文件)
+    tmp = p.with_suffix(f".tmp.{os.getpid()}")
+    try:
+        tmp.write_text(content, encoding="utf-8")
+        os.replace(tmp, p)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
 
     return p
 

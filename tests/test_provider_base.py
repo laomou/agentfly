@@ -218,6 +218,40 @@ class TestProviderMethods:
         assert any("/v1/messages" in u for u in calls), "先试了 anthropic"
         assert any("/v1/chat/completions" in u for u in calls), "fallback 到 openai"
         assert r.latency_ms >= 0
+        # 回退成功 → 缓存 api_type + 标记 dirty
+        assert p._find_entry("c1").api_type == "openai"
+        assert p._cache_dirty is True
+
+    def test_custom_cached_api_type_no_fallback_not_dirty(self, monkeypatch):
+        """已缓存 api_type → 只试一次, 不标记 dirty."""
+        from agentfly.providers.custom import CustomProvider
+        from agentfly.models.schema import ModelEntry
+        p = CustomProvider(ProviderConfig(
+            name=ProviderType.CUSTOM, api_key="k", base_url="http://x",
+            models=[ModelEntry(name="c1", api_type="openai")]))
+
+        class Client:
+            _calls = 0
+
+            def __init__(self, *a, **k):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def stream(self, method, url, **k):
+                Client._calls += 1
+                assert "/v1/chat/completions" in url  # 直接走缓存的 openai
+                return _FakeStream(200, ['data: {"choices":[{"delta":{"content":"ok"}}]}', 'data: [DONE]'])
+
+        monkeypatch.setattr("agentfly.providers.base.httpx.Client", Client)
+        r = p.test_model("c1")
+        assert r.status == "ok"
+        assert Client._calls == 1  # 无探测 anthropic
+        assert p._cache_dirty is False
 
     def test_custom_both_400_no_fallback(self, monkeypatch):
         """两个端点都 400 → error."""
@@ -334,3 +368,33 @@ class TestAnthropicParseEdge:
 
     def test_bad_json(self):
         assert _anthropic_provider()._parse_stream_chunk("data: nope") is None
+
+
+class TestShouldFallback:
+    """回退判断基于 status_code (int), 不是 error_message 子串."""
+
+    @staticmethod
+    def _r(status, code=0, msg=""):
+        from agentfly.models.schema import TestResult
+        return TestResult(provider="p", model="m", status=status, status_code=code, error_message=msg)
+
+    def test_400_fallbacks(self):
+        from agentfly.providers.base import _should_fallback
+        assert _should_fallback(self._r("error", 400)) is True
+
+    def test_404_405_501_fallback(self):
+        from agentfly.providers.base import _should_fallback
+        assert _should_fallback(self._r("error", 404)) is True
+        assert _should_fallback(self._r("error", 405)) is True
+        assert _should_fallback(self._r("error", 501)) is True
+
+    def test_500_no_fallback_even_if_msg_has_400(self):
+        """500 且消息含 '400' 子串 → 不回退 (旧子串匹配的 bug)."""
+        from agentfly.providers.base import _should_fallback
+        assert _should_fallback(self._r("error", 500, "reset after 400 bytes")) is False
+
+    def test_non_error_status_no_fallback(self):
+        from agentfly.providers.base import _should_fallback
+        assert _should_fallback(self._r("unauthorized", 401)) is False
+        assert _should_fallback(self._r("timeout", 0)) is False
+        assert _should_fallback(self._r("ok", 200)) is False

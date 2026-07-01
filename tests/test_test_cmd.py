@@ -9,8 +9,8 @@ import pytest
 from click.testing import CliRunner
 
 from agentfly.cli import test_cmd as tc
-from agentfly.cli.test_cmd import _base, _icon, _pad, _resolve, test
-from agentfly.models.schema import ProviderConfig, TestResult, UnifiedConfig
+from agentfly.cli.test_cmd import _base, _clear_api_type, _icon, _pad, _resolve, _summary, test
+from agentfly.models.schema import ModelEntry, ProviderConfig, TestResult, UnifiedConfig
 from agentfly.models.types import ProviderType
 
 
@@ -44,9 +44,9 @@ class TestIcon:
 
 
 class TestBase:
-    """_base 取第一个 endpoint."""
+    """_base 返回 base_url."""
 
-    def test_first_endpoint(self):
+    def test_base_url(self):
         pc = ProviderConfig(name=ProviderType.OPENAI, api_key="k",
                             base_url="http://x", models=["m"])
         assert _base(pc) == "http://x"
@@ -73,7 +73,7 @@ class _FakeProvider:
     def list_models(self):
         return ["m1", "m2"]
 
-    def test_model(self, model, api_key=None, api_base=None, provider_key=""):
+    def test_model(self, model, api_key=None, api_base=None, provider_key="", timeout=30.0):
         return TestResult(
             provider=provider_key or "deepseek", model=model, status="ok",
             latency_ms=120.0, ttft_ms=50.0, tokens_per_sec=30.0,
@@ -126,3 +126,56 @@ class TestCommand:
         data = json.loads(r.output)
         assert data[0]["model"] == "m1"
         assert data[0]["status"] == "ok"
+
+
+class TestSummary:
+    """_summary 按状态计数."""
+
+    @staticmethod
+    def _r(status):
+        return TestResult(provider="p", model="m", status=status)
+
+    def test_counts_ordered(self):
+        results = [self._r("ok"), self._r("ok"), self._r("timeout"), self._r("error")]
+        assert _summary(results) == "2 ok, 1 timeout, 1 error"
+
+    def test_single_status(self):
+        assert _summary([self._r("ok")]) == "1 ok"
+
+
+class TestRefresh:
+    """--refresh 清空 api_type 缓存."""
+
+    def test_clear_api_type(self):
+        pc = ProviderConfig(
+            name=ProviderType.CUSTOM, api_key="k", base_url="http://x",
+            models=[ModelEntry(name="m1", api_type="openai"), ModelEntry(name="m2")],
+        )
+        _clear_api_type(pc)
+        assert all(me.api_type == "" for me in pc.models)
+
+
+class TestParallelAndTimeout:
+    """并发执行 + timeout 透传."""
+
+    def test_parallel_runs_all_models(self, monkeypatch):
+        monkeypatch.setattr(tc, "ensure_config_exists", lambda: (_cfg(), "p"))
+        monkeypatch.setattr(tc, "get_provider", lambda pc: _FakeProvider())
+        r = CliRunner().invoke(test, ["deepseek", "-j", "2"])
+        assert r.exit_code == 0
+        assert "m1" in r.output and "m2" in r.output
+        assert "2 ok" in r.output  # 汇总行
+
+    def test_timeout_passed_through(self, monkeypatch):
+        seen = {}
+
+        class RecordingProvider(_FakeProvider):
+            def test_model(self, model, api_key=None, api_base=None, provider_key="", timeout=30.0):
+                seen["timeout"] = timeout
+                return super().test_model(model, api_key, api_base, provider_key, timeout)
+
+        monkeypatch.setattr(tc, "ensure_config_exists", lambda: (_cfg(), "p"))
+        monkeypatch.setattr(tc, "get_provider", lambda pc: RecordingProvider())
+        r = CliRunner().invoke(test, ["deepseek:m1", "-t", "7"])
+        assert r.exit_code == 0
+        assert seen["timeout"] == 7.0
