@@ -14,7 +14,17 @@ from agentfly.providers.registry import get_provider
 
 
 def _complete_providers(ctx: click.Context, param: click.Parameter, incomplete: str) -> list[Any]:
-    """Tab 补全: Provider 名称."""
+    """Tab 补全: Provider 名称 或 provider:model."""
+    if ":" in incomplete:
+        provider, partial = incomplete.split(":", 1)
+        config, _ = ensure_config_exists()
+        pc = config.providers.get(provider)
+        if pc and pc.models:
+            return [
+                click.shell_completion.CompletionItem(f"{provider}:{m}")
+                for m in pc.models if m.startswith(partial)
+            ]
+        return []
     config, _ = ensure_config_exists()
     return [
         click.shell_completion.CompletionItem(name)
