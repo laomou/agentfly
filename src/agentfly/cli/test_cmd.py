@@ -199,10 +199,10 @@ def _test_provider(
 @click.command(name="test")
 @click.argument("target", required=False, shell_complete=_complete_providers)
 @click.argument("model_name", required=False, shell_complete=_complete_models)
-@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text", help="输出格式")
-@click.option("--parallel", "-j", default=_DEFAULT_PARALLEL, type=int, help=f"并发数 (默认 {_DEFAULT_PARALLEL})")
+@click.option("--format", "-f", "fmt", type=click.Choice(["text", "json"]), default="text", help="输出格式")
+@click.option("--parallel", "-p", default=_DEFAULT_PARALLEL, type=int, help=f"并发数 (默认 {_DEFAULT_PARALLEL})")
 @click.option("--timeout", "-t", default=_DEFAULT_TIMEOUT_S, type=float, help=f"单模型超时秒数 (默认 {int(_DEFAULT_TIMEOUT_S)})")
-@click.option("--refresh", is_flag=True, default=False, help="清空 api_type 缓存, 强制重新探测接口")
+@click.option("--refresh", "-r", is_flag=True, default=False, help="清空 api_type 缓存, 强制重新探测接口")
 def test(
     target: str | None, model_name: str | None, fmt: str,
     parallel: int, timeout: float, refresh: bool,
@@ -215,7 +215,7 @@ def test(
       agentfly test deepseek                  # DeepSeek 所有模型
       agentfly test deepseek deepseek-chat    # 指定模型
       agentfly test deepseek:deepseek-chat    # 兼容写法
-      agentfly test -j 8 -t 15                # 8 并发, 15s 超时
+      agentfly test -p 8 -t 15                # 8 并发, 15s 超时
       agentfly test stepcode --refresh        # 强制重探接口
       agentfly test --format json             # JSON 输出
     """

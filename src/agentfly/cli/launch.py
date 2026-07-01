@@ -53,7 +53,7 @@ def _complete_models(ctx: click.Context, param: click.Parameter, incomplete: str
 @click.option("--provider", "-P", default=None, help="指定 Provider (覆盖 YAML 绑定)", shell_complete=_complete_providers)
 @click.option("--model", "-m", default=None, help="覆盖默认模型", shell_complete=_complete_models)
 @click.option("--project", "-p", default=None, help="指定项目/工作目录")
-@click.option("--list", "list_agents", is_flag=True, default=False, help="列出所有可启动的 Agent")
+@click.option("--list", "-l", "list_agents", is_flag=True, default=False, help="列出所有可启动的 Agent")
 @click.argument("agent_args", nargs=-1)
 def launch(
     agent_name: str | None,

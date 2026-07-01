@@ -161,7 +161,7 @@ class TestParallelAndTimeout:
     def test_parallel_runs_all_models(self, monkeypatch):
         monkeypatch.setattr(tc, "ensure_config_exists", lambda: (_cfg(), "p"))
         monkeypatch.setattr(tc, "get_provider", lambda pc: _FakeProvider())
-        r = CliRunner().invoke(test, ["deepseek", "-j", "2"])
+        r = CliRunner().invoke(test, ["deepseek", "--parallel", "2"])
         assert r.exit_code == 0
         assert "m1" in r.output and "m2" in r.output
         assert "2 ok" in r.output  # 汇总行
