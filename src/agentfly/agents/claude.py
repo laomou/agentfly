@@ -24,6 +24,8 @@ class Claude(Agent):
         }
         if config.effective_api_base:
             env["ANTHROPIC_BASE_URL"] = config.effective_api_base
+        if config.agent.model:
+            env["ANTHROPIC_MODEL"] = config.agent.model
         return env
 
     def launch_command(self, config: ResolvedConfig) -> list[str]:

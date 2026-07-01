@@ -27,7 +27,7 @@ class TestClaude:
         env = Claude().env_vars(resolved_config)
         assert "ANTHROPIC_DEFAULT_OPUS_MODEL" not in env
         assert "ANTHROPIC_DEFAULT_SONNET_MODEL" not in env
-        assert "ANTHROPIC_MODEL" not in env
+        assert env["ANTHROPIC_MODEL"] == resolved_config.agent.model
 
     def test_launch_command(self, resolved_config):
         assert Claude().launch_command(resolved_config)[0] == "claude"
