@@ -175,10 +175,9 @@ def _select_provider(config: UnifiedConfig, agent_name: str, preferred_format: s
         click.secho("无可用 Provider。请运行 'agentfly provider add'", fg="red")
         sys.exit(1)
 
-    from agentfly.core.resolver import SUPPORTED_FORMATS
     compatible = [
         k for k, p in config.providers.items()
-        if p.base_url and preferred_format in SUPPORTED_FORMATS.get(p.name, ())
+        if preferred_format in p.endpoints
     ]
     if not compatible:
         click.secho(

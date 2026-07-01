@@ -22,14 +22,14 @@ class TestProviderManager:
         openai_config = ProviderConfig(
             name=ProviderType.OPENAI,
             api_key="${OPENAI_API_KEY}",
-            base_url="https://api.openai.com",
+            endpoints={"openai": "https://api.openai.com"},
             models=["gpt-4o"],
             default_model="gpt-4o",
         )
         mgr.add(openai_config)
         assert len(mgr.list()) == 2
         assert mgr.get("openai") is not None
-        assert mgr.get("openai").base_url == "https://api.openai.com"
+        assert mgr.get("openai").endpoints == {"openai": "https://api.openai.com"}
 
     def test_remove(self, unified_config):
         mgr = ProviderManager(unified_config)

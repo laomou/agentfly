@@ -14,6 +14,27 @@ from agentfly.models.types import ProviderType
 
 _DEFAULT_TIMEOUT_S = 30.0
 
+# api_type → API 路径
+_PATHS = {
+    "anthropic": "/v1/messages",
+    "openai": "/v1/chat/completions",
+}
+# 无缓存时的探测优先级
+_PROBE_ORDER = ("anthropic", "openai")
+
+
+def _headers(api_type: str, api_key: str) -> dict[str, str]:
+    if api_type == "anthropic":
+        return {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+    return {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
 
 class Provider(ABC):
     """服务提供商的抽象基类.
@@ -71,17 +92,6 @@ class Provider(ABC):
         """构建测试请求 (stream=True 由 test_model 自动添加)."""
         ...
 
-    def _test_endpoint(self, model: str) -> str:
-        """API 路径, 默认 OpenAI 兼容 /v1/chat/completions."""
-        return "/v1/chat/completions"
-
-    def _request_headers(self, model: str, api_key: str) -> dict[str, str]:
-        """默认 Bearer 鉴权头."""
-        return {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-
     def _parse_stream_chunk(self, line: str) -> str | None:
         """解析 SSE 一行 (OpenAI 格式). 兼容 reasoning 模型."""
         if not line.startswith("data: "):
@@ -99,22 +109,31 @@ class Provider(ABC):
         delta = choices[0].get("delta", {})
         return delta.get("content") or delta.get("reasoning_content") or ""
 
-    def _test_candidates(
-        self, model: str, api_key: str, base: str,
-    ) -> list[tuple[str, dict, str]]:
-        """返回 (url, headers, endpoint_key) 候选列表.
+    # ── 候选端点 (基于 config.endpoints) ──
 
-        endpoint_key 用于缓存 (如 "openai"/"anthropic"), 单端点 Provider 传 "".
-        子类覆写以实现多端点回退.
+    def _api_types(self, model: str) -> list[str]:
+        """待探测的接口顺序. 有 api_type 缓存则按缓存, 否则 anthropic 优先.
+
+        只保留 config.endpoints 里实际配置了的接口.
         """
-        return [(
-            f"{base.rstrip('/')}{self._test_endpoint(model)}",
-            self._request_headers(model, api_key),
-            "",
-        )]
+        eps = self.config.endpoints
+        cached = [t for t in self.config.models.get(model, "").split(",")
+                  if t.strip() in eps]
+        if cached:
+            return cached
+        return [t for t in _PROBE_ORDER if t in eps]
 
-    def _on_test_ok(self, model: str, ep_key: str, idx: int) -> None:
-        """成功回调. 子类覆写以缓存跑通的 endpoint_key."""
+    def _test_candidates(self, model: str, api_key: str) -> list[tuple[str, dict, str]]:
+        """返回 (url, headers, api_type) 候选列表, 从 endpoints 逐接口构造."""
+        out: list[tuple[str, dict, str]] = []
+        for t in self._api_types(model):
+            base = self.config.endpoints.get(t)
+            if base:
+                out.append((f"{base.rstrip('/')}{_PATHS[t]}", _headers(t, api_key), t))
+        return out
+
+    def _on_results(self, model: str, api_types: list[str]) -> None:
+        """测试结束回调, api_types = 跑通的接口 (已按速度排序). 子类覆写以缓存."""
 
     # ── 主流程 ──
 
@@ -122,37 +141,43 @@ class Provider(ABC):
         self,
         model: str,
         api_key: str | None = None,
-        api_base: str | None = None,
         provider_key: str = "",
         timeout: float = _DEFAULT_TIMEOUT_S,
     ) -> TestResult:
-        """流式测试模型: TTFT + 吞吐 + 总延迟.
+        """流式测试模型: 探测所有候选接口, 取最快的报告.
 
-        接口不匹配状态码 (400/404/405/…) 自动回退下一个候选端点; 其他错误直接返回.
+        - ok: 收集; 接口不匹配 (400/404/…): 试下一个候选; 其他错误: 立即返回.
+        - 多个接口都通时 api_type 记成 "anthropic,openai" (速度快的在前),
+          Total/TTFT/TPS 显示最快接口的指标.
         """
         pkey = provider_key or self.config.name.value
         key = api_key or self.config.api_key
-        base = api_base or self.config.base_url
         body = {**self._build_test_request(model), "stream": True}
 
-        candidates = self._test_candidates(model, key, base)
-        last_error = ""
+        candidates = self._test_candidates(model, key)
+        if not candidates:
+            return TestResult(provider=pkey, model=model, status="error",
+                              error_message="未配置 endpoints")
 
-        for idx, (url, headers, ep_key) in enumerate(candidates):
+        successes: list[TestResult] = []  # 每个 result.api_type 已置为单接口 key
+        for url, headers, ep_key in candidates:
             result = self._do_test(pkey, model, url, body, headers, timeout)
             if result.status == "ok":
                 result.api_type = ep_key
-                self._on_test_ok(model, ep_key, idx)
-                return result
-            if not _should_fallback(result):
-                return result
-            last_error = result.error_message or last_error
+                successes.append(result)
+            elif not _should_fallback(result):
+                return result  # 401/403/超时/连接不上 → 直接返回
 
-        return TestResult(
-            provider=pkey, model=model,
-            status="error",
-            error_message=last_error or "所有接口均失败",
-        )
+        if not successes:
+            return TestResult(provider=pkey, model=model, status="error",
+                              error_message="所有接口均失败")
+
+        successes.sort(key=lambda r: r.latency_ms)  # 最快的在前
+        ordered = [r.api_type for r in successes if r.api_type]
+        best = successes[0]
+        best.api_type = ",".join(ordered)
+        self._on_results(model, ordered)
+        return best
 
     def _do_test(
         self, pkey: str, model: str, url: str, body: dict, headers: dict,

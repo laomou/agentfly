@@ -44,7 +44,7 @@ def _complete_models(ctx: click.Context, param: click.Parameter, incomplete: str
 # ── helpers ──
 
 def _resolve(config, name: str) -> tuple[ProviderConfig, Any]:
-    """解析 Provider 名称 → (ProviderConfig, Provider 实例)."""
+    """解析 Provider 名称 → (ProviderConfig, Provider 实例). pc 已解析 env."""
     try:
         pc = ConfigResolver(config).get_provider(name)
     except KeyError:
@@ -55,20 +55,23 @@ def _resolve(config, name: str) -> tuple[ProviderConfig, Any]:
     return pc, p
 
 
-def _base(pc: ProviderConfig) -> str:
-    return pc.base_url
-
-
 def _clear_api_type(pc: ProviderConfig) -> None:
     """--refresh: 清空 api_type 缓存, 强制重新探测."""
     for name in pc.models:
         pc.models[name] = ""
 
 
-def _maybe_save_cache(config, pc: ProviderConfig, p) -> None:
-    """仅当本次测试改动了 api_type 缓存才写回配置."""
-    if getattr(p, "_cache_dirty", False):
-        save_config(config)
+def _save_cache(config, key: str, pc: ProviderConfig, p) -> None:
+    """探测到的 api_type 从 (env 解析后的) 副本同步回原始 config, 再写盘.
+
+    原始 config 保留 ${VAR} 形式的 api_key, 不会被解析后的明文覆盖.
+    """
+    if not getattr(p, "_cache_dirty", False):
+        return
+    orig = config.providers.get(key)
+    if orig is not None:
+        orig.models = dict(pc.models)
+    save_config(config)
 
 
 # ── 输出 ──
@@ -151,7 +154,7 @@ def _run_models(
 ) -> list[TestResult]:
     """并发测试模型列表, on_result 在每个结果就绪时回调 (线程主序不定)."""
     def run(model: str) -> TestResult:
-        return p.test_model(model, pc.api_key, _base(pc), provider_key=provider_key, timeout=timeout)
+        return p.test_model(model, pc.api_key, provider_key=provider_key, timeout=timeout)
 
     by_model: dict[str, TestResult] = {}
     if parallel <= 1:
@@ -193,7 +196,7 @@ def _test_provider(
     )
     if stream:
         click.echo(f"  → {_summary(results)}")
-    _maybe_save_cache(config, pc, p)
+    _save_cache(config, provider_key, pc, p)
     return results
 
 
@@ -234,9 +237,9 @@ def test(
         pc, p = _resolve(config, target)
         if refresh:
             _clear_api_type(pc)
-        r = p.test_model(model_name, pc.api_key, _base(pc), provider_key=target, timeout=timeout)
+        r = p.test_model(model_name, pc.api_key, provider_key=target, timeout=timeout)
         _print_table([r]) if fmt == "text" else _print_json([r])
-        _maybe_save_cache(config, pc, p)
+        _save_cache(config, target, pc, p)
         return
 
     if target:
@@ -252,8 +255,8 @@ def test(
         return
 
     # 全部 Provider
-    for pk, pc in config.providers.items():
-        p = get_provider(pc)
+    for pk in list(config.providers):
+        pc, p = _resolve(config, pk)
         if p is None:
             continue
         if refresh:

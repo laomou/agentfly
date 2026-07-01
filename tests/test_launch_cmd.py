@@ -24,7 +24,7 @@ def _provider(fmt: str = "openai", models: list[str] | None = None,
     return ProviderConfig(
         name=ProviderType.CUSTOM,
         api_key="sk-x",
-        base_url="http://example",
+        endpoints={fmt: "http://example"},
         models=models or [],
         default_model=default,
     )
@@ -59,16 +59,16 @@ class TestSelectProvider:
         # 只有一个支持 anthropic → 自动选它
         cfg = UnifiedConfig(providers={
             "oa": ProviderConfig(name=ProviderType.OPENAI, api_key="k",
-                                 base_url="http://x", models=["m1"]),
+                                 endpoints={"openai": "http://x"}, models=["m1"]),
             "an": ProviderConfig(name=ProviderType.ANTHROPIC, api_key="k",
-                                 base_url="http://x", models=["m1"]),
+                                 endpoints={"anthropic": "http://x"}, models=["m1"]),
         })
         assert _select_provider(cfg, "claude", "anthropic") == "an"
 
     def test_no_compatible_exits(self):
         cfg = UnifiedConfig(providers={
             "oa": ProviderConfig(name=ProviderType.OPENAI, api_key="k",
-                                 base_url="http://x", models=["m1"]),
+                                 endpoints={"openai": "http://x"}, models=["m1"]),
         })
         with pytest.raises(SystemExit):
             _select_provider(cfg, "claude", "anthropic")

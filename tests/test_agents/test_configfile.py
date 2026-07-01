@@ -23,7 +23,7 @@ def _rc(name: AgentType, model: str = "deepseek-v4-pro") -> ResolvedConfig:
         agent=AgentConfig(name=name, provider="deepseek", model=model),
         provider=ProviderConfig(
             name=ProviderType.DEEPSEEK, api_key="sk-secret",
-            base_url="http://x",
+            endpoints={"openai": "http://x"},
         ),
         effective_api_base="https://api.deepseek.com",
         effective_api_format="openai",

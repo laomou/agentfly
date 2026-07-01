@@ -9,7 +9,7 @@ import pytest
 from click.testing import CliRunner
 
 from agentfly.cli import test_cmd as tc
-from agentfly.cli.test_cmd import _base, _clear_api_type, _icon, _pad, _resolve, _summary, test
+from agentfly.cli.test_cmd import _clear_api_type, _icon, _pad, _resolve, _summary, test
 from agentfly.models.schema import ProviderConfig, TestResult, UnifiedConfig
 from agentfly.models.types import ProviderType
 
@@ -43,25 +43,12 @@ class TestIcon:
         assert _icon("whatever") == "❓"
 
 
-class TestBase:
-    """_base 返回 base_url."""
-
-    def test_base_url(self):
-        pc = ProviderConfig(name=ProviderType.OPENAI, api_key="k",
-                            base_url="http://x", models=["m"])
-        assert _base(pc) == "http://x"
-
-    def test_empty(self):
-        pc = ProviderConfig(name=ProviderType.OPENAI, api_key="k",
-                            base_url="", models=["m"])
-        assert _base(pc) == ""
-
 
 def _cfg():
     return UnifiedConfig(providers={
         "deepseek": ProviderConfig(
             name=ProviderType.DEEPSEEK, api_key="sk-x",
-            base_url="https://api.deepseek.com",
+            endpoints={"openai": "https://api.deepseek.com"},
             models=["m1", "m2"], default_model="m1",
         )
     })
@@ -73,7 +60,7 @@ class _FakeProvider:
     def list_models(self):
         return ["m1", "m2"]
 
-    def test_model(self, model, api_key=None, api_base=None, provider_key="", timeout=30.0):
+    def test_model(self, model, api_key=None, provider_key="", timeout=30.0):
         return TestResult(
             provider=provider_key or "deepseek", model=model, status="ok",
             latency_ms=120.0, ttft_ms=50.0, tokens_per_sec=30.0,
@@ -148,7 +135,7 @@ class TestRefresh:
 
     def test_clear_api_type(self):
         pc = ProviderConfig(
-            name=ProviderType.CUSTOM, api_key="k", base_url="http://x",
+            name=ProviderType.CUSTOM, api_key="k", endpoints={"openai": "http://x"},
             models={"m1": "openai", "m2": ""},
         )
         _clear_api_type(pc)
@@ -170,9 +157,9 @@ class TestParallelAndTimeout:
         seen = {}
 
         class RecordingProvider(_FakeProvider):
-            def test_model(self, model, api_key=None, api_base=None, provider_key="", timeout=30.0):
+            def test_model(self, model, api_key=None, provider_key="", timeout=30.0):
                 seen["timeout"] = timeout
-                return super().test_model(model, api_key, api_base, provider_key, timeout)
+                return super().test_model(model, api_key, provider_key, timeout)
 
         monkeypatch.setattr(tc, "ensure_config_exists", lambda: (_cfg(), "p"))
         monkeypatch.setattr(tc, "get_provider", lambda pc: RecordingProvider())

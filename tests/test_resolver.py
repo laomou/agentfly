@@ -9,12 +9,12 @@ from agentfly.models.schema import AgentConfig, ProviderConfig, UnifiedConfig
 from agentfly.models.types import AgentType, ProviderType
 
 
-def _cfg(api_key="sk-x", base_url="http://x"):
+def _cfg(api_key="sk-x", endpoints=None):
     return UnifiedConfig(
         providers={
             "p": ProviderConfig(
                 name=ProviderType.OPENAI, api_key=api_key,
-                base_url=base_url,
+                endpoints=endpoints if endpoints is not None else {"openai": "http://x"},
                 models=["m1", "m2"], default_model="m1",
             )
         },
@@ -63,7 +63,7 @@ class TestGetProvider:
     def test_accepts_provider_type(self):
         cfg = UnifiedConfig(providers={
             "openai": ProviderConfig(name=ProviderType.OPENAI, api_key="k",
-                                     base_url="http://x", models=["m"])
+                                     endpoints={"openai": "http://x"}, models=["m"])
         })
         pc = ConfigResolver(cfg).get_provider(ProviderType.OPENAI)
         assert pc.name == ProviderType.OPENAI

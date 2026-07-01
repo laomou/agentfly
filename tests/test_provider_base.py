@@ -14,14 +14,14 @@ from agentfly.providers.openai import OpenAIProvider
 def _openai_provider():
     return OpenAIProvider(ProviderConfig(
         name=ProviderType.OPENAI, api_key="sk-x",
-        base_url="https://api.openai.com", models=["gpt-4o"],
+        endpoints={"openai": "https://api.openai.com"}, models=["gpt-4o"],
     ))
 
 
 def _anthropic_provider():
     return AnthropicProvider(ProviderConfig(
         name=ProviderType.ANTHROPIC, api_key="k",
-        base_url="https://api.anthropic.com", models=["claude-opus-4-8"],
+        endpoints={"anthropic": "https://api.anthropic.com"}, models=["claude-opus-4-8"],
     ))
 
 
@@ -120,6 +120,10 @@ class TestParseStreamChunk:
         line = 'data: {"type":"content_block_delta","delta":{"text":"hi"}}'
         assert _anthropic_provider()._parse_stream_chunk(line) == "hi"
 
+    def test_anthropic_thinking(self):
+        line = 'data: {"type":"content_block_delta","delta":{"thinking":"Let"}}'
+        assert _anthropic_provider()._parse_stream_chunk(line) == "Let"
+
     def test_anthropic_message_delta_none(self):
         line = 'data: {"type":"message_delta","delta":{}}'
         assert _anthropic_provider()._parse_stream_chunk(line) is None
@@ -130,13 +134,17 @@ class TestProviderMethods:
 
     def test_openai(self):
         p = _openai_provider()
-        assert p._test_endpoint("gpt-4o") == "/v1/chat/completions"
+        url, headers, t = p._test_candidates("gpt-4o", "k")[0]
+        assert url.endswith("/v1/chat/completions") and t == "openai"
+        assert headers["Authorization"] == "Bearer k"
         assert p._build_test_request("m")["model"] == "m"
         assert "gpt-4o" in p.list_models()
 
     def test_anthropic(self):
         p = _anthropic_provider()
-        assert p._test_endpoint("claude-opus-4-8") == "/v1/messages"
+        url, headers, t = p._test_candidates("claude-opus-4-8", "k")[0]
+        assert url.endswith("/v1/messages") and t == "anthropic"
+        assert headers["x-api-key"] == "k"
         assert p._build_test_request("m")["max_tokens"] == 64
         assert p.list_models()  # 非空
 
@@ -144,17 +152,18 @@ class TestProviderMethods:
         from agentfly.providers.deepseek import DeepSeekProvider
         p = DeepSeekProvider(ProviderConfig(
             name=ProviderType.DEEPSEEK, api_key="k",
-            base_url="http://x", models=["d1"]))
-        assert p._test_endpoint("d1") == "/v1/chat/completions"
+            endpoints={"openai": "http://x"}, models=["d1"]))
+        url, _, t = p._test_candidates("d1", "k")[0]
+        assert url == "http://x/v1/chat/completions" and t == "openai"
         assert p._build_test_request("m")["messages"]
         assert p.list_models() == ["d1"]
 
     def test_custom_openai_only(self, monkeypatch):
-        """只有 openai endpoint: 直接走 openai, 没有 fallback."""
+        """只配 openai endpoint: 只探 openai."""
         from agentfly.providers.custom import CustomProvider
         p = CustomProvider(ProviderConfig(
             name=ProviderType.CUSTOM, api_key="k",
-            base_url="http://x", models=["c1"]))
+            endpoints={"openai": "http://x"}, models=["c1"]))
         _patch_client(monkeypatch, stream=_FakeStream(200, [
             'data: {"choices":[{"delta":{"content":"hi"}}]}',
             'data: {"choices":[{"delta":{"content":"!"}}]}',
@@ -164,11 +173,11 @@ class TestProviderMethods:
         assert r.status == "ok"
 
     def test_custom_anthropic_only(self, monkeypatch):
-        """只有 anthropic endpoint: 直接走 anthropic."""
+        """只配 anthropic endpoint: 只探 anthropic."""
         from agentfly.providers.custom import CustomProvider
         p = CustomProvider(ProviderConfig(
             name=ProviderType.CUSTOM, api_key="k",
-            base_url="http://x", models=["c1"]))
+            endpoints={"anthropic": "http://x"}, models=["c1"]))
         _patch_client(monkeypatch, stream=_FakeStream(200, [
             'event: content_block_delta',
             'data: {"type":"content_block_delta","delta":{"text":"hi"}}',
@@ -183,7 +192,7 @@ class TestProviderMethods:
         from agentfly.providers.custom import CustomProvider
         p = CustomProvider(ProviderConfig(
             name=ProviderType.CUSTOM, api_key="k",
-            base_url="http://x",
+            endpoints={"openai": "http://x", "anthropic": "http://x"},
             models=["c1"]))
         # 第一次调用 (anthropic) 400, 第二次调用 (openai) 成功
         calls = []
@@ -226,7 +235,7 @@ class TestProviderMethods:
         """已缓存 api_type → 只试一次, 不标记 dirty."""
         from agentfly.providers.custom import CustomProvider
         p = CustomProvider(ProviderConfig(
-            name=ProviderType.CUSTOM, api_key="k", base_url="http://x",
+            name=ProviderType.CUSTOM, api_key="k", endpoints={"openai": "http://x", "anthropic": "http://x"},
             models={"c1": "openai"}))
 
         class Client:
@@ -252,12 +261,46 @@ class TestProviderMethods:
         assert Client._calls == 1  # 无探测 anthropic
         assert p._cache_dirty is False
 
+    def test_custom_both_interfaces_ok_records_both(self, monkeypatch):
+        """两个接口都通 → api_type 记成 'anthropic,openai', 缓存双值."""
+        from agentfly.providers.custom import CustomProvider
+        p = CustomProvider(ProviderConfig(
+            name=ProviderType.CUSTOM, api_key="k", endpoints={"openai": "http://x", "anthropic": "http://x"},
+            models=["c1"]))
+
+        class Client:
+            _calls = 0
+
+            def __init__(self, *a, **k):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def stream(self, method, url, **k):
+                Client._calls += 1
+                # anthropic 与 openai 都返回可解析内容
+                if "/v1/messages" in url:
+                    return _FakeStream(200, ['data: {"type":"content_block_delta","delta":{"text":"hi"}}'])
+                return _FakeStream(200, ['data: {"choices":[{"delta":{"content":"hi"}}]}', 'data: [DONE]'])
+
+        monkeypatch.setattr("agentfly.providers.base.httpx.Client", Client)
+        r = p.test_model("c1")
+        assert r.status == "ok"
+        assert Client._calls == 2                    # 两个接口都探
+        assert set(r.api_type.split(",")) == {"anthropic", "openai"}
+        assert set(p.config.models["c1"].split(",")) == {"anthropic", "openai"}
+        assert p._cache_dirty is True
+
     def test_custom_both_400_no_fallback(self, monkeypatch):
         """两个端点都 400 → error."""
         from agentfly.providers.custom import CustomProvider
         p = CustomProvider(ProviderConfig(
             name=ProviderType.CUSTOM, api_key="k",
-            base_url="http://x",
+            endpoints={"openai": "http://x", "anthropic": "http://x"},
             models=["c1"]))
 
         class FailClient:
@@ -285,7 +328,7 @@ class TestProviderMethods:
         from agentfly.providers.custom import CustomProvider
         p = CustomProvider(ProviderConfig(
             name=ProviderType.CUSTOM, api_key="k",
-            base_url="http://x",
+            endpoints={"openai": "http://x", "anthropic": "http://x"},
             models=["c1"]))
 
         class AuthClient:
@@ -314,7 +357,7 @@ class TestProviderMethods:
         from agentfly.providers.custom import CustomProvider
         p = CustomProvider(ProviderConfig(
             name=ProviderType.CUSTOM, api_key="k",
-            base_url="http://x",
+            endpoints={"openai": "http://x", "anthropic": "http://x"},
             models=["c1"]))
 
         class TimeoutClient:
@@ -343,7 +386,7 @@ class TestProviderMethods:
         from agentfly.providers.custom import CustomProvider
         p = CustomProvider(ProviderConfig(
             name=ProviderType.CUSTOM, api_key="k",
-            base_url="", models=["c1"]))
+            endpoints={}, models=["c1"]))
         r = p.test_model("c1")
         assert r.status == "error"
 
@@ -351,9 +394,12 @@ class TestProviderMethods:
         """CustomProvider 的 parse 兼容两种 SSE."""
         from agentfly.providers.custom import CustomProvider
         p = CustomProvider(ProviderConfig(
-            name=ProviderType.CUSTOM, api_key="k", base_url="", models=[]))
+            name=ProviderType.CUSTOM, api_key="k", endpoints={}, models=[]))
         assert p._parse_stream_chunk('data: {"choices":[{"delta":{"content":"hi"}}]}') == "hi"
+        assert p._parse_stream_chunk('data: {"choices":[{"delta":{"reasoning_content":"r"}}]}') == "r"
         assert p._parse_stream_chunk('data: {"type":"content_block_delta","delta":{"text":"hi"}}') == "hi"
+        # 推理模型: thinking_delta 也算内容 (否则 TTFT/TPS 全空)
+        assert p._parse_stream_chunk('data: {"type":"content_block_delta","delta":{"thinking":"Let"}}') == "Let"
         assert p._parse_stream_chunk('data: {"type":"message_delta","delta":{}}') is None
         assert p._parse_stream_chunk("data: [DONE]") is None
         assert p._parse_stream_chunk("not data") is None

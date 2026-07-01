@@ -67,7 +67,9 @@ providers:
   deepseek:
     name: deepseek
     api_key: ${DEEPSEEK_API_KEY}
-    base_url: https://api.deepseek.com
+    endpoints:
+      openai: https://api.deepseek.com
+      anthropic: https://api.deepseek.com/anthropic   # 不同接口可用不同 URL
     models:
       deepseek-v4-pro: ''
       deepseek-v4-flash: ''
@@ -76,17 +78,20 @@ providers:
   my-proxy:
     name: custom
     api_key: ${MY_KEY}
-    base_url: https://my-gateway.com
+    endpoints:
+      openai: https://my-gateway.com
+      anthropic: https://my-gateway.com
     models:
-      claude-opus-4-6: ''       # 空 = 未探测, 首次 test 自动识别接口
-      gpt-5.5: openai           # 已缓存接口类型, 后续直接走 openai
+      claude-opus-4-6: anthropic          # test 探测出的接口类型 (空=未探测)
+      deepseek-chat: anthropic,openai      # 两个都通, 速度快的在前
+      gpt-5.5: openai
     default_model: claude-opus-4-6
 ```
 
-`models` 是「模型名 → api_type」映射。Custom Provider 同时兼容 OpenAI
-(`/v1/chat/completions`) 和 Anthropic (`/v1/messages`)：`agentfly test` 首次自动
-探测每个模型走哪个接口 (anthropic 优先，`400/404` 回退 openai)，把结果写回
-`api_type` 缓存，后续测试零额外探测。`--refresh` 清空缓存强制重探。
+`endpoints` 是「api_type → Base URL」映射（openai/anthropic 可指向不同 URL）。
+`models` 是「模型名 → api_type」映射：`agentfly test` 对每个模型探测所有已配接口
+(anthropic 优先)，把跑通的写回 `api_type` (多个用逗号分隔, 速度快的在前)，Total/TTFT/TPS
+显示最快接口。后续测试按缓存顺序探测；`--refresh` 清空缓存强制重探。
 
 Agent 环境变量从 GitHub 远程配置自动获取，无需手动配置。
 离线时使用包内默认配置降级。

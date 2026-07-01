@@ -24,16 +24,6 @@ class AnthropicProvider(Provider):
     def list_models(self) -> list[str]:
         return ANTHROPIC_MODELS
 
-    def _test_endpoint(self, model: str) -> str:
-        return "/v1/messages"
-
-    def _request_headers(self, model: str, api_key: str) -> dict[str, str]:
-        return {
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-            "Content-Type": "application/json",
-        }
-
     def _build_test_request(self, model: str) -> dict:
         return {
             "model": model,
@@ -42,7 +32,7 @@ class AnthropicProvider(Provider):
         }
 
     def _parse_stream_chunk(self, line: str) -> str | None:
-        """Anthropic SSE: data: {"type":"content_block_delta","delta":{"text":"..."}}"""
+        """Anthropic SSE: content_block_delta 的 text_delta / thinking_delta."""
         if not line.startswith("data: "):
             return None
         try:
@@ -50,5 +40,6 @@ class AnthropicProvider(Provider):
         except json.JSONDecodeError:
             return None
         if event.get("type") == "content_block_delta":
-            return event.get("delta", {}).get("text", "")
+            delta = event.get("delta", {})
+            return delta.get("text") or delta.get("thinking") or ""
         return None

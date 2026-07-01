@@ -20,7 +20,10 @@ class ProviderConfig(BaseModel):
 
     name: ProviderType = Field(description="Provider 类型")
     api_key: str = Field(description="API Key，支持 ${ENV_VAR} 引用")
-    base_url: str = Field(default="", description="API Base URL")
+    endpoints: dict[str, str] = Field(
+        default_factory=dict,
+        description="api_type → Base URL, 如 {openai: url1, anthropic: url2}",
+    )
     models: dict[str, str] = Field(
         default_factory=dict,
         description="模型名 → api_type (openai/anthropic; 空=未探测, test 自动填充)",

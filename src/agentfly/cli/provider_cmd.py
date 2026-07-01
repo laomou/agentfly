@@ -181,7 +181,8 @@ def list_providers():
     click.echo()
     for key, p in config.providers.items():
         n_models = len(p.models)
-        click.echo(f"  {key:<20}  {p.base_url or '(无 URL)'}")
+        eps = ", ".join(f"{k}={v}" for k, v in p.endpoints.items()) or "(无 URL)"
+        click.echo(f"  {key:<20}  {eps}")
         click.echo(f"    默认: {p.default_model or '(未设置)'}  |  {n_models} 个可用模型")
         click.echo()
 
@@ -238,7 +239,9 @@ def add_provider(name: str | None, api_base: str | None, api_key: str | None,
     # 1. 确定 api_base: 已知厂商 > --api-base > 交互输入
     known = known_providers.get(name.lower()) if name else None
     if known and not api_base:
-        api_base = known["api_base"]
+        # 已知厂商的默认 URL 从其 endpoints 取 (openai 优先)
+        eps = known.get("endpoints", {})
+        api_base = eps.get("openai") or next(iter(eps.values()), "")
     if not api_base:
         api_base = click.prompt("API Base URL", default="http://localhost:8000")
 
@@ -318,10 +321,15 @@ def add_provider(name: str | None, api_base: str | None, api_key: str | None,
     default_model = model_list[0] if model_list else ""
 
     provider_type = ProviderType(known["type"]) if known else ProviderType.CUSTOM
+    # 已知厂商用其 endpoints (含各接口专属 URL); 自定义则探测到的协议都指向 api_base
+    if known and known.get("endpoints"):
+        endpoints = dict(known["endpoints"])
+    else:
+        endpoints = {p: api_base for p in protocols}
     provider_config = ProviderConfig(
         name=provider_type,
         api_key=api_key,
-        base_url=api_base,
+        endpoints=endpoints,
         models=model_list,
         default_model=default_model,
     )
@@ -352,12 +360,13 @@ def reload_models(name: str):
         click.secho(f"Provider '{name}' 未配置", fg="red")
         sys.exit(1)
 
-    if not provider.base_url:
-        click.secho("无 base_url，无法拉取模型", fg="yellow")
+    fetch_base = provider.endpoints.get("openai") or next(iter(provider.endpoints.values()), "")
+    if not fetch_base:
+        click.secho("无 endpoints，无法拉取模型", fg="yellow")
         return
 
     click.echo(f"  从 API 拉取模型...")
-    new_models = _fetch_models(provider.base_url, provider.api_key)
+    new_models = _fetch_models(fetch_base, provider.api_key)
     if new_models:
         provider.models = {m: "" for m in new_models}
         provider.default_model = new_models[0]
@@ -406,6 +415,10 @@ def show_provider(name: str):
     click.echo(f"  Key:        {name}")
     click.echo(f"  Type:       {provider.name.value}")
     click.echo(f"  API Key:    {_mask_key(provider.api_key)}")
-    click.echo(f"  Base URL:   {provider.base_url or '(无)'}")
+    if provider.endpoints:
+        for fmt, url in provider.endpoints.items():
+            click.echo(f"  {fmt + ' URL:':<12}{url}")
+    else:
+        click.echo(f"  Endpoints:  (无)")
     click.echo(f"  Models:     {', '.join(provider.model_names) if provider.models else '(无)'}")
     click.echo(f"  Default:    {provider.default_model or '(未设置)'}")

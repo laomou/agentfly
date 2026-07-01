@@ -47,42 +47,25 @@ def _resolve_provider(provider: ProviderConfig) -> ProviderConfig:
     return ProviderConfig(
         name=provider.name,
         api_key=_resolve_env_ref(provider.api_key),
-        base_url=provider.base_url,
+        endpoints=provider.endpoints,
         models=provider.models,
         default_model=provider.default_model,
     )
 
 
-SUPPORTED_FORMATS: dict[ProviderType, tuple[str, ...]] = {
-    ProviderType.CUSTOM: ("openai", "anthropic"),
-    ProviderType.OPENAI: ("openai",),
-    ProviderType.ANTHROPIC: ("anthropic",),
-    ProviderType.DEEPSEEK: ("openai",),
-}
-
-
 def _pick_endpoint(provider: ProviderConfig, preferred_format: str) -> str:
-    """根据 Agent 需要的格式选择正确的 API Base URL.
-
-    Args:
-        provider: Provider 配置.
-        preferred_format: Agent 需要的格式 ("openai" / "anthropic").
-
-    Returns:
-        API Base URL.
+    """按 Agent 需要的格式选对应的 API Base URL.
 
     Raises:
-        ValueError: Provider 不支持此格式.
+        ValueError: Provider 未配置该格式的 endpoint.
     """
-    supported = SUPPORTED_FORMATS.get(provider.name, ())
-    if preferred_format not in supported:
+    url = provider.endpoints.get(preferred_format)
+    if not url:
         raise ValueError(
-            f"{provider.name.value} 不支持 {preferred_format} 格式. "
-            f"支持: {list(supported)}"
+            f"Provider '{provider.name.value}' 未配置 {preferred_format} endpoint. "
+            f"已配置: {list(provider.endpoints)}"
         )
-    if not provider.base_url:
-        raise ValueError(f"Provider '{provider.name.value}' 未配置 base_url")
-    return provider.base_url
+    return url
 
 
 class ConfigResolver:

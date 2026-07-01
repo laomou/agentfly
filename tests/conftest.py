@@ -23,7 +23,7 @@ def provider_config():
     return ProviderConfig(
         name=ProviderType.ANTHROPIC,
         api_key="test-key-123",
-        base_url="https://api.anthropic.com",
+        endpoints={"anthropic": "https://api.anthropic.com"},
         models=["claude-sonnet-4-6", "claude-opus-4-8"],
         default_model="claude-sonnet-4-6",
     )
