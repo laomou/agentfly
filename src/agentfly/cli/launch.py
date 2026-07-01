@@ -96,7 +96,7 @@ def launch(
 
     launcher = AgentLauncher(adapter)
 
-    click.echo(f"  LMSwitch v{__version__}")
+    click.echo(f"  AgentFly v{__version__}")
     click.echo(f"  {adapter.display_name} · {provider_key} · {resolved.agent.model or '默认模型'}")
     click.echo()
 

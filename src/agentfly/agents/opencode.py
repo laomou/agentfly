@@ -30,7 +30,7 @@ class OpenCode(Agent):
             "provider": {
                 _PROVIDER: {
                     "npm": "@ai-sdk/openai-compatible",
-                    "name": "LMSwitch",
+                    "name": "AgentFly",
                     "options": {
                         "baseURL": openai_base_url(config.effective_api_base),
                         "apiKey": config.provider.api_key,

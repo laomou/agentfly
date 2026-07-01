@@ -1,4 +1,4 @@
-"""LMSwitch CLI 入口."""
+"""AgentFly CLI 入口."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from agentfly.cli.test_cmd import test
 @click.group()
 @click.version_option(version=__version__, prog_name="agentfly")
 def cli():
-    """LMSwitch — AI Agent 客制化配置中心.
+    """AgentFly — AI Agent 客制化配置中心.
 
     统一管理多 AI Agent 配置，一键启动.
     """

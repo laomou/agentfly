@@ -17,7 +17,7 @@ from agentfly.providers.manager import ProviderManager
 
 # ── 远端厂商配置 ──
 
-_GITHUB_RAW = "https://raw.githubusercontent.com/laomou/LMSwitch/main/src/agentfly"
+_GITHUB_RAW = "https://raw.githubusercontent.com/laomou/agentfly/main/src/agentfly"
 _KNOWN_CACHE: dict[str, dict] | None = None
 
 
