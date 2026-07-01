@@ -121,12 +121,10 @@ def test(target: str | None, fmt: str) -> None:
             _print_json(results)
 
     else:
-        # 全部 Provider → 分组表格
+        # 全部 Provider → 逐个流式输出
         for pk, pc in config.providers.items():
             p = get_provider(pc)
             if p is None:
                 continue
-            group = _test_models(pc, p, pk)
-            if group:
-                _print_table(group)
-                click.echo()
+            _test_models(pc, p, pk, stream=True)
+            click.echo()
