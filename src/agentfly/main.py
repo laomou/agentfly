@@ -20,6 +20,22 @@ def cli():
     """
 
 
+@cli.command(name="completion")
+@click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]), default="bash")
+def completion(shell: str):
+    """安装命令补全 (tab 补全).
+
+    用法:
+      eval "$(agentfly completion bash)"  然后 source ~/.bashrc
+      eval "$(agentfly completion zsh)"   然后 source ~/.zshrc
+      agentfly completion fish | source
+    """
+    import os
+    env = f"_AGENTFLY_COMPLETE={shell}_source"
+    script = os.popen(f"{env} agentfly").read()
+    click.echo(script, nl=False)
+
+
 # 注册子命令
 cli.add_command(doctor)
 cli.add_command(launch)
