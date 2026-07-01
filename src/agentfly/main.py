@@ -21,21 +21,32 @@ def cli():
 
 
 @cli.command(name="completion")
-@click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]), default="bash")
+@click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]), required=False, default=None)
 @click.option("--install", "-i", is_flag=True, default=False, help="自动安装到 shell 配置文件")
-def completion(shell: str, install: bool):
+def completion(shell: str | None, install: bool):
     """Tab 补全安装.
 
     \b
-    手动加载:
-      eval "$(agentfly completion bash)"
-
-    \b
-    一键安装:
-      agentfly completion --install
+    用法:
+      agentfly completion bash      输出 bash 补全脚本
+      agentfly completion zsh       输出 zsh 补全脚本
+      agentfly completion --install 自动检测 shell 并安装
     """
     import os
+
+    if not shell and not install:
+        raise click.UsageError(
+            "请指定 shell 或使用 --install 自动安装.\n\n"
+            "  agentfly completion bash       # 打印 bash 补全脚本\n"
+            "  agentfly completion zsh        # 打印 zsh 补全脚本\n"
+            "  agentfly completion --install  # 自动安装"
+        )
+
     if install:
+        if not shell:
+            shell = os.path.basename(os.environ.get("SHELL", "bash"))
+            if shell not in ("bash", "zsh", "fish"):
+                shell = "bash"
         rc_files = {"bash": "~/.bashrc", "zsh": "~/.zshrc", "fish": "~/.config/fish/config.fish"}
         rc = os.path.expanduser(rc_files.get(shell, "~/.bashrc"))
         line = f'eval "$(agentfly completion {shell})"'
