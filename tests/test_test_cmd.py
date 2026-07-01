@@ -48,12 +48,12 @@ class TestBase:
 
     def test_first_endpoint(self):
         pc = ProviderConfig(name=ProviderType.OPENAI, api_key="k",
-                            endpoints={"openai": "http://x"}, models=["m"])
+                            base_url="http://x", models=["m"])
         assert _base(pc) == "http://x"
 
     def test_empty(self):
         pc = ProviderConfig(name=ProviderType.OPENAI, api_key="k",
-                            endpoints={}, models=["m"])
+                            base_url="", models=["m"])
         assert _base(pc) == ""
 
 
@@ -61,7 +61,7 @@ def _cfg():
     return UnifiedConfig(providers={
         "deepseek": ProviderConfig(
             name=ProviderType.DEEPSEEK, api_key="sk-x",
-            endpoints={"openai": "https://api.deepseek.com"},
+            base_url="https://api.deepseek.com",
             models=["m1", "m2"], default_model="m1",
         )
     })

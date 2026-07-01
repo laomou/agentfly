@@ -43,7 +43,7 @@ def _complete_models(ctx: click.Context, param: click.Parameter, incomplete: str
         if pc and pc.models:
             return [
                 click.shell_completion.CompletionItem(m)
-                for m in pc.models if m.startswith(incomplete)
+                for m in pc.model_names if m.startswith(incomplete)
             ]
     return []
 
@@ -175,7 +175,11 @@ def _select_provider(config: UnifiedConfig, agent_name: str, preferred_format: s
         click.secho("无可用 Provider。请运行 'agentfly provider add'", fg="red")
         sys.exit(1)
 
-    compatible = [k for k, p in config.providers.items() if preferred_format in p.endpoints]
+    from agentfly.core.resolver import SUPPORTED_FORMATS
+    compatible = [
+        k for k, p in config.providers.items()
+        if p.base_url and preferred_format in SUPPORTED_FORMATS.get(p.name, ())
+    ]
     if not compatible:
         click.secho(
             f"没有支持 {preferred_format} 格式的 Provider。"
@@ -206,7 +210,7 @@ def _select_model(provider_cfg: ProviderConfig) -> str | None:
       - 模型 ≤1 个 或 非 TTY → None
       - 多个 → 弹菜单, default_model 高亮为默认项
     """
-    models = provider_cfg.models
+    models = provider_cfg.model_names
     if len(models) <= 1 or not sys.stdin.isatty():
         return None
     default = provider_cfg.default_model or models[0]

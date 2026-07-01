@@ -114,18 +114,17 @@ def _probe_endpoint(api_base: str, api_key: str, fmt: str) -> bool:
         return False
 
 
-def _detect_endpoints(api_base: str, api_key: str) -> dict[str, str]:
-    """自动探测可用的 API endpoints.
+def _detect_protocols(api_base: str, api_key: str) -> set[str]:
+    """自动探测可用的 API 协议.
 
-    同时探测 OpenAI (/v1/chat/completions) 和 Anthropic (/v1/messages).
-    返回: {"openai": "http://...", ...} - 同 base URL 不同格式.
+    探测 OpenAI (/v1/chat/completions) 和 Anthropic (/v1/messages).
+    返回: {"openai", "anthropic", ...}
     """
-    base = api_base.rstrip("/")
-    endpoints: dict[str, str] = {}
+    protocols: set[str] = set()
     for fmt in ("openai", "anthropic"):
         if _probe_endpoint(api_base, api_key, fmt):
-            endpoints[fmt] = base
-    return endpoints
+            protocols.add(fmt)
+    return protocols
 
 
 def _fetch_models(api_base: str, api_key: str, api_format: str = "openai") -> list[str]:
@@ -181,11 +180,8 @@ def list_providers():
     click.echo("已配置的 Provider:")
     click.echo()
     for key, p in config.providers.items():
-        formats = ", ".join(p.endpoints.keys()) if p.endpoints else "(无)"
         n_models = len(p.models)
-        click.echo(f"  {key:<20} [{formats}]")
-        for fmt, url in p.endpoints.items():
-            click.echo(f"    {fmt}: {url}")
+        click.echo(f"  {key:<20}  {p.base_url or '(无 URL)'}")
         click.echo(f"    默认: {p.default_model or '(未设置)'}  |  {n_models} 个可用模型")
         click.echo()
 
@@ -285,36 +281,34 @@ def add_provider(name: str | None, api_base: str | None, api_key: str | None,
         model_list = [m.strip() for m in models.split(",") if m.strip()]
 
     if _is_plaintext_key(api_key):
-        click.echo(f"  探测 API 端点...")
-        endpoints = _detect_endpoints(api_base, api_key)
+        click.echo(f"  探测 API 协议...")
+        protocols = _detect_protocols(api_base, api_key)
     else:
-        # env var 引用无法探测，直接用已知配置或手动选择
-        endpoints: dict[str, str] = {}
+        protocols: set[str] = set()
         click.echo(f"  ${api_key[2:-1]} 环境变量引用，跳过探测")
     if known:
-        # 已知厂商: 补全探测没识别到的格式
-        for fmt, url in known["endpoints"].items():
-            if fmt not in endpoints:
-                endpoints[fmt] = url
+        for fmt in known.get("endpoints", {}):
+            if fmt not in protocols:
+                protocols.add(fmt)
                 click.echo(f"  + {fmt} (已知默认)")
-        click.echo(f"  ✓ 格式: {', '.join(endpoints.keys())}")
-    elif endpoints:
-        click.echo(f"  ✓ 可用格式: {', '.join(endpoints.keys())}")
+        click.echo(f"  ✓ 协议: {', '.join(sorted(protocols))}")
+    elif protocols:
+        click.echo(f"  ✓ 可用协议: {', '.join(sorted(protocols))}")
     else:
-        click.echo(f"  ⚠ 无法自动探测，手动选择格式")
-        fmt_str = click.prompt("API 格式 (openai/anthropic, 逗号分隔)", default="openai")
-        endpoints = {}
+        click.echo(f"  ⚠ 无法自动探测，手动选择协议")
+        fmt_str = click.prompt("API 协议 (openai/anthropic, 逗号分隔)", default="openai")
+        protocols = set()
         for f in fmt_str.split(","):
             f = f.strip()
             if f in ("openai", "anthropic"):
-                endpoints[f] = api_base
-        if not endpoints:
-            endpoints = {"openai": api_base}
+                protocols.add(f)
+        if not protocols:
+            protocols = {"openai"}
 
     # ── 拉取模型 ──
-    if not model_list and "openai" in endpoints and _is_plaintext_key(api_key):
+    if not model_list and not protocols.isdisjoint({"openai", ""}) and _is_plaintext_key(api_key):
         click.echo(f"  拉取可用模型...")
-        model_list = _fetch_models(endpoints["openai"], api_key)
+        model_list = _fetch_models(api_base, api_key)
         if model_list:
             click.echo(f"  ✓ 发现 {len(model_list)} 个模型")
     if not model_list:
@@ -327,7 +321,7 @@ def add_provider(name: str | None, api_base: str | None, api_key: str | None,
     provider_config = ProviderConfig(
         name=provider_type,
         api_key=api_key,
-        endpoints=endpoints,
+        base_url=api_base,
         models=model_list,
         default_model=default_model,
     )
@@ -358,14 +352,15 @@ def reload_models(name: str):
         click.secho(f"Provider '{name}' 未配置", fg="red")
         sys.exit(1)
 
-    if "openai" not in provider.endpoints:
-        click.secho("无 OpenAI endpoint，无法拉取模型", fg="yellow")
+    if not provider.base_url:
+        click.secho("无 base_url，无法拉取模型", fg="yellow")
         return
 
     click.echo(f"  从 API 拉取模型...")
-    new_models = _fetch_models(provider.endpoints["openai"], provider.api_key)
+    new_models = _fetch_models(provider.base_url, provider.api_key)
     if new_models:
-        provider.models = new_models
+        from agentfly.models.schema import ModelEntry
+        provider.models = [ModelEntry(name=m) for m in new_models]
         provider.default_model = new_models[0]
         mgr.add(provider, key=name)
         mgr.save()
@@ -412,11 +407,6 @@ def show_provider(name: str):
     click.echo(f"  Key:        {name}")
     click.echo(f"  Type:       {provider.name.value}")
     click.echo(f"  API Key:    {_mask_key(provider.api_key)}")
-    click.echo(f"  Endpoints:")
-    if provider.endpoints:
-        for fmt, url in provider.endpoints.items():
-            click.echo(f"    {fmt}: {url}")
-    else:
-        click.echo(f"    (无)")
-    click.echo(f"  Models:     {', '.join(provider.models) if provider.models else '(无)'}")
+    click.echo(f"  Base URL:   {provider.base_url or '(无)'}")
+    click.echo(f"  Models:     {', '.join(provider.model_names) if provider.models else '(无)'}")
     click.echo(f"  Default:    {provider.default_model or '(未设置)'}")

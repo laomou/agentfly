@@ -7,9 +7,10 @@ from typing import Any
 
 import click
 
-from agentfly.core.config import ensure_config_exists
+from agentfly.core.config import ensure_config_exists, save_config
 from agentfly.core.resolver import ConfigResolver
 from agentfly.models.schema import ProviderConfig, TestResult
+from agentfly.models.types import ProviderType
 from agentfly.providers.registry import get_provider
 
 
@@ -31,7 +32,7 @@ def _complete_models(ctx: click.Context, param: click.Parameter, incomplete: str
         if pc and pc.models:
             return [
                 click.shell_completion.CompletionItem(m)
-                for m in pc.models if m.startswith(incomplete)
+                for m in pc.model_names if m.startswith(incomplete)
             ]
     return []
 
@@ -50,10 +51,10 @@ def _resolve(config, name: str):
     return pc, p
 
 
-def _test_models(pc, p, provider_key: str, stream: bool = False) -> list[TestResult]:
+def _test_models(config, pc, p, provider_key: str, stream: bool = False) -> list[TestResult]:
     """测试 provider 所有模型，stream=True 时逐个输出."""
     results: list[TestResult] = []
-    models = [m for m in (pc.models or p.list_models()) if m]
+    models = [m for m in (pc.model_names or p.list_models()) if m]
     mw = max((len(m) for m in models), default=5)
     sw, lw, tw, pw = 14, 8, 8, 8  # status, latency, ttft, tps
     if stream and models:
@@ -65,13 +66,16 @@ def _test_models(pc, p, provider_key: str, stream: bool = False) -> list[TestRes
         results.append(r)
         if stream:
             click.echo(f"{r.model:<{mw}}  {_icon(r.status):<2}{r.status:<{sw-2}} {_pad(r.latency_ms):<{lw}}  {_pad(r.ttft_ms):<{tw}}  {_pad(r.tokens_per_sec):<{pw}}")
+    # api_type 有变更 → 写回配置
+    if pc.name == ProviderType.CUSTOM and any(me.api_type for me in pc.models):
+        save_config(config)
     return results
 
 
 # ── output ──
 
 def _base(pc: ProviderConfig) -> str:
-    return next(iter(pc.endpoints.values()), "") if pc.endpoints else ""
+    return pc.base_url
 
 
 def _icon(status: str) -> str:
@@ -141,11 +145,13 @@ def test(target: str | None, model_name: str | None, fmt: str) -> None:
         pc, p = _resolve(config, target)
         r = p.test_model(model_name, pc.api_key, _base(pc), provider_key=target)
         _print_table([r]) if fmt == "text" else _print_json([r])
+        if pc.name == ProviderType.CUSTOM and any(me.api_type for me in pc.models):
+            save_config(config)
 
     elif target:
         # 单个 Provider → 流式输出
         pc, p = _resolve(config, target)
-        results = _test_models(pc, p, target, stream=True)
+        results = _test_models(config, pc, p, target, stream=True)
         if fmt == "json":
             _print_json(results)
 
@@ -155,5 +161,5 @@ def test(target: str | None, model_name: str | None, fmt: str) -> None:
             p = get_provider(pc)
             if p is None:
                 continue
-            _test_models(pc, p, pk, stream=True)
+            _test_models(config, pc, p, pk, stream=True)
             click.echo()

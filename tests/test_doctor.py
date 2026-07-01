@@ -10,11 +10,11 @@ from agentfly.models.schema import ProviderConfig, UnifiedConfig
 from agentfly.models.types import ProviderType
 
 
-def _cfg(api_key, endpoints=None, models=None):
+def _cfg(api_key, base_url="http://x", models=None):
     return UnifiedConfig(providers={
         "deepseek": ProviderConfig(
             name=ProviderType.DEEPSEEK, api_key=api_key,
-            endpoints=endpoints if endpoints is not None else {"openai": "http://x"},
+            base_url=base_url,
             models=models if models is not None else ["m1"],
         )
     })
@@ -46,8 +46,8 @@ class TestDoctor:
 
     def test_missing_endpoints_and_models_are_issues(self, monkeypatch):
         monkeypatch.setattr(doctor_mod, "ensure_config_exists",
-                            lambda: (_cfg("plain-key", endpoints={}, models=[]), "p"))
+                            lambda: (_cfg("plain-key", base_url="", models=[]), "p"))
         r = CliRunner().invoke(doctor)
         assert r.exit_code == 0
-        assert "无 endpoint" in r.output
+        assert "无 base_url" in r.output
         assert "无模型" in r.output

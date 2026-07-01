@@ -52,10 +52,10 @@ class TestProbeEndpoint:
         assert pc._probe_endpoint("http://x", "k", "openai") is False
 
 
-class TestDetectEndpoints:
+class TestDetectProtocols:
     def test_filters_by_probe(self, monkeypatch):
         monkeypatch.setattr(pc, "_probe_endpoint", lambda base, key, fmt: fmt == "openai")
-        assert pc._detect_endpoints("http://x/", "k") == {"openai": "http://x"}
+        assert pc._detect_protocols("http://x/", "k") == {"openai"}
 
 
 class TestFetchModels:

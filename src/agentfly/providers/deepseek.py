@@ -17,9 +17,9 @@ class DeepSeekProvider(Provider):
     display_name = "DeepSeek"
 
     def list_models(self) -> list[str]:
-        return self.config.models
+        return self.config.model_names
 
-    def _test_endpoint(self) -> str:
+    def _test_endpoint(self, model: str) -> str:
         return "/v1/chat/completions"
 
     def _build_test_request(self, model: str) -> dict:

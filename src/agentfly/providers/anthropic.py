@@ -24,8 +24,15 @@ class AnthropicProvider(Provider):
     def list_models(self) -> list[str]:
         return ANTHROPIC_MODELS
 
-    def _test_endpoint(self) -> str:
+    def _test_endpoint(self, model: str) -> str:
         return "/v1/messages"
+
+    def _request_headers(self, model: str, api_key: str) -> dict[str, str]:
+        return {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
 
     def _build_test_request(self, model: str) -> dict:
         return {

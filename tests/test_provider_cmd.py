@@ -75,7 +75,7 @@ class FakeProvider(Provider):
     name = ProviderType.CUSTOM
     display_name = "Fake"
 
-    def _test_endpoint(self) -> str:
+    def _test_endpoint(self, model: str) -> str:
         return "/v1/chat/completions"
 
     def _build_test_request(self, model: str) -> dict:
@@ -95,7 +95,7 @@ class TestModelProviderKey:
         config = ProviderConfig(
             name=ProviderType.CUSTOM,
             api_key="sk-test",
-            endpoints={"openai": "http://localhost:9999"},
+            base_url="http://localhost:9999",
             models=["test-model"],
             default_model="test-model",
         )
@@ -107,7 +107,7 @@ class TestModelProviderKey:
         config = ProviderConfig(
             name=ProviderType.DEEPSEEK,
             api_key="sk-test",
-            endpoints={"openai": "http://localhost:9999"},
+            base_url="http://localhost:9999",
             models=["test-model"],
             default_model="test-model",
         )

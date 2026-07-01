@@ -38,12 +38,9 @@ def doctor():
     if config.providers:
         click.echo(f"  Provider ({len(config.providers)}):")
         for pk, pc in config.providers.items():
-            n_endpoints = len(pc.endpoints)
-            n_models = len(pc.models)
-            fmt_list = ", ".join(pc.endpoints.keys())
-            click.echo(f"    {pk}: {n_endpoints} endpoint(s) [{fmt_list}], {n_models} model(s)")
-            if not pc.endpoints:
-                issues.append(f"Provider '{pk}' 无 endpoint")
+            click.echo(f"    {pk}: base_url={pc.base_url}  models={len(pc.models)}")
+            if not pc.base_url:
+                issues.append(f"Provider '{pk}' 无 base_url")
             if not pc.models:
                 issues.append(f"Provider '{pk}' 无模型列表")
     else:

@@ -11,7 +11,7 @@ def make_codex_config():
     provider = ProviderConfig(
         name=ProviderType.OPENAI,
         api_key="sk-test",
-        endpoints={"openai": "https://api.openai.com"},
+        base_url="http://x",
         models=["gpt-4o"],
         default_model="gpt-4o",
     )

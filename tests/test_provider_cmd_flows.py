@@ -21,7 +21,7 @@ def _cfg():
     return UnifiedConfig(providers={
         "deepseek": ProviderConfig(
             name=ProviderType.DEEPSEEK, api_key="${DS_KEY}",
-            endpoints={"openai": "https://api.deepseek.com"},
+            base_url="http://x",
             models=["m1", "m2"], default_model="m1",
         )
     })
