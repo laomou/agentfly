@@ -24,6 +24,7 @@ class Claude(Agent):
         }
         if config.effective_api_base:
             env["ANTHROPIC_BASE_URL"] = config.effective_api_base
+            env["CLAUDE_CODE_ATTRIBUTION_HEADER"] = "0"
         if config.agent.model:
             env["ANTHROPIC_MODEL"] = config.agent.model
         return env
