@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from typing import Any
 
 import click
 
@@ -15,8 +16,17 @@ from agentfly.models.schema import AgentConfig, ProviderConfig, UnifiedConfig
 from agentfly.models.types import AgentType
 
 
+def _complete_agents(ctx: click.Context, param: click.Parameter, incomplete: str) -> list[Any]:
+    """Tab 补全: Agent 名称."""
+    registry = get_registry()
+    return [
+        click.shell_completion.CompletionItem(a.name.value, help=a.display_name)
+        for a in registry.list() if a.name.value.startswith(incomplete)
+    ]
+
+
 @click.command(name="launch")
-@click.argument("agent_name", required=False)
+@click.argument("agent_name", required=False, shell_complete=_complete_agents)
 @click.option("--provider", "-P", default=None, help="指定 Provider (覆盖 YAML 绑定)")
 @click.option("--model", "-m", default=None, help="覆盖默认模型")
 @click.option("--project", "-p", default=None, help="指定项目/工作目录")

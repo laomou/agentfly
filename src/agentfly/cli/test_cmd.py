@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import click
 
@@ -10,6 +11,15 @@ from agentfly.core.config import ensure_config_exists
 from agentfly.core.resolver import ConfigResolver
 from agentfly.models.schema import ProviderConfig, TestResult
 from agentfly.providers.registry import get_provider
+
+
+def _complete_providers(ctx: click.Context, param: click.Parameter, incomplete: str) -> list[Any]:
+    """Tab 补全: Provider 名称."""
+    config, _ = ensure_config_exists()
+    return [
+        click.shell_completion.CompletionItem(name)
+        for name in config.providers if name.startswith(incomplete)
+    ]
 
 
 # ── helpers ──
@@ -92,7 +102,7 @@ def _print_json(results: list[TestResult]) -> None:
 # ── command ──
 
 @click.command(name="test")
-@click.argument("target", required=False)
+@click.argument("target", required=False, shell_complete=_complete_providers)
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text", help="输出格式")
 def test(target: str | None, fmt: str) -> None:
     """测试模型可用性和延迟 (stream 模式).
