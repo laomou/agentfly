@@ -16,7 +16,7 @@ from agentfly.providers.base import _DEFAULT_TIMEOUT_S
 from agentfly.providers.registry import get_provider
 
 _STATUS_ICONS = {"ok": "✅", "timeout": "⏳", "error": "❌", "unauthorized": "❌"}
-_COL_STATUS, _COL_LATENCY, _COL_TTFT, _COL_TPS = 14, 8, 8, 8
+_COL_STATUS, _COL_API, _COL_LATENCY, _COL_TTFT, _COL_TPS = 14, 10, 8, 8, 8
 _DEFAULT_PARALLEL = 4
 
 
@@ -61,8 +61,8 @@ def _base(pc: ProviderConfig) -> str:
 
 def _clear_api_type(pc: ProviderConfig) -> None:
     """--refresh: 清空 api_type 缓存, 强制重新探测."""
-    for me in pc.models:
-        me.api_type = ""
+    for name in pc.models:
+        pc.models[name] = ""
 
 
 def _maybe_save_cache(config, pc: ProviderConfig, p) -> None:
@@ -90,11 +90,13 @@ def _header(model_w: int) -> str:
     return (
         f"{'Model':<{model_w}}  "
         f"{'Status':<{_COL_STATUS}}  "
+        f"{'API':<{_COL_API}}  "
         f"{'Total':<{_COL_LATENCY}}  "
         f"{'TTFT':<{_COL_TTFT}}  "
         f"{'TPS':<{_COL_TPS}}\n"
         f"{'-'*model_w}  "
         f"{'-'*_COL_STATUS}  "
+        f"{'-'*_COL_API}  "
         f"{'-'*_COL_LATENCY}  "
         f"{'-'*_COL_TTFT}  "
         f"{'-'*_COL_TPS}"
@@ -105,6 +107,7 @@ def _row(r: TestResult, model_w: int) -> str:
     return (
         f"{r.model:<{model_w}}  "
         f"{_icon(r.status):<2}{r.status:<{_COL_STATUS - 2}} "
+        f"{(r.api_type or '-'):<{_COL_API}}  "
         f"{_pad(r.latency_ms):<{_COL_LATENCY}}  "
         f"{_pad(r.ttft_ms):<{_COL_TTFT}}  "
         f"{_pad(r.tokens_per_sec):<{_COL_TPS}}"

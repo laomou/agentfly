@@ -13,7 +13,7 @@ source ~/.bashrc
 ## 快速开始
 
 ```bash
-# 1. 添加 Provider（自动探测端点 + 拉取模型列表）
+# 1. 添加 Provider（自动探测接口类型 + 拉取模型列表）
 agentfly provider add deepseek --api-key '${DEEPSEEK_API_KEY}'
 
 # 2. 测试所有模型（流式输出: 延迟 + TTFT + 吞吐）
@@ -69,8 +69,8 @@ providers:
     api_key: ${DEEPSEEK_API_KEY}
     base_url: https://api.deepseek.com
     models:
-    - deepseek-v4-pro
-    - deepseek-v4-flash
+      deepseek-v4-pro: ''
+      deepseek-v4-flash: ''
     default_model: deepseek-v4-pro
 
   my-proxy:
@@ -78,16 +78,15 @@ providers:
     api_key: ${MY_KEY}
     base_url: https://my-gateway.com
     models:
-    - claude-opus-4-6            # 首次 test 自动探测接口类型
-    - name: gpt-5.5              # api_type 已缓存 → 后续直接走 openai
-      api_type: openai
+      claude-opus-4-6: ''       # 空 = 未探测, 首次 test 自动识别接口
+      gpt-5.5: openai           # 已缓存接口类型, 后续直接走 openai
     default_model: claude-opus-4-6
 ```
 
-Custom Provider 同时兼容 OpenAI (`/v1/chat/completions`) 和 Anthropic (`/v1/messages`)
-两种接口：`agentfly test` 首次会自动探测每个模型走哪个接口 (anthropic 优先，
-`400/404` 回退 openai)，跑通的接口写入 `api_type` 缓存，后续测试零额外探测。
-`--refresh` 可清空缓存强制重探。
+`models` 是「模型名 → api_type」映射。Custom Provider 同时兼容 OpenAI
+(`/v1/chat/completions`) 和 Anthropic (`/v1/messages`)：`agentfly test` 首次自动
+探测每个模型走哪个接口 (anthropic 优先，`400/404` 回退 openai)，把结果写回
+`api_type` 缓存，后续测试零额外探测。`--refresh` 清空缓存强制重探。
 
 Agent 环境变量从 GitHub 远程配置自动获取，无需手动配置。
 离线时使用包内默认配置降级。

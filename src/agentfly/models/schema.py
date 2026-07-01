@@ -4,22 +4,13 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from agentfly.models.types import AgentType, ProviderType
 
 # ──────────────────────────────────────────
 # Provider
 # ──────────────────────────────────────────
-
-
-class ModelEntry(BaseModel):
-    """单个模型的信息, 配置 yaml 中 models 的成员."""
-
-    name: str = Field(description="模型名称")
-    api_type: str = Field(default="", description="跑通接口: openai / anthropic, test 自动填充")
-
-    model_config = ConfigDict(extra="ignore")
 
 
 class ProviderConfig(BaseModel):
@@ -30,41 +21,38 @@ class ProviderConfig(BaseModel):
     name: ProviderType = Field(description="Provider 类型")
     api_key: str = Field(description="API Key，支持 ${ENV_VAR} 引用")
     base_url: str = Field(default="", description="API Base URL")
-    models: list[ModelEntry] = Field(default_factory=list, description="可用模型列表")
+    models: dict[str, str] = Field(
+        default_factory=dict,
+        description="模型名 → api_type (openai/anthropic; 空=未探测, test 自动填充)",
+    )
     default_model: str = Field(default="", description="默认模型")
 
     @property
     def model_names(self) -> list[str]:
-        return [m.name for m in self.models]
-
-    @field_validator("default_model", mode="before")
-    @classmethod
-    def set_default_model(cls, v: str, info) -> str:
-        if not v and info.data.get("models"):
-            models = info.data["models"]
-            if models:
-                first = models[0]
-                return first.name if isinstance(first, ModelEntry) else first
-        return v
+        return list(self.models.keys())
 
     @field_validator("models", mode="before")
     @classmethod
     def coerce_models(cls, v):
-        """兼容旧配置: models 是 list[str]"""
+        """归一到 dict[name, api_type]. 接受 list[str] / list[{name,api_type}] / dict."""
+        if isinstance(v, dict):
+            return {k: (val or "") for k, val in v.items()}
         if isinstance(v, list):
-            return [
-                ModelEntry(name=s) if isinstance(s, str) else s
-                for s in v
-            ]
+            out: dict[str, str] = {}
+            for item in v:
+                if isinstance(item, str):
+                    out[item] = ""
+                elif isinstance(item, dict) and item.get("name"):
+                    out[item["name"]] = item.get("api_type") or ""
+            return out
         return v
 
-    @field_serializer("models")
-    def serialize_models(self, v):
-        """无 api_type → 序列化为字符串, 有 api_type → 序列化为 dict."""
-        return [
-            m.name if not m.api_type else m.model_dump(mode="json")
-            for m in v
-        ]
+    @model_validator(mode="after")
+    def _fill_default_model(self):
+        # 空则取第一个模型作为默认
+        if not self.default_model and self.models:
+            self.default_model = next(iter(self.models))
+        return self
 
 
 # ──────────────────────────────────────────
@@ -130,6 +118,7 @@ class TestResult(BaseModel):
     model: str
     status: str  # "ok" | "timeout" | "error" | "unauthorized"
     status_code: int = 0         # HTTP 状态码 (0 = 非 HTTP 错误)
+    api_type: str = ""           # 跑通的接口类型 (openai / anthropic)
     latency_ms: float = 0.0     # 总响应时间
     ttft_ms: float = 0.0         # Time To First Token
     tokens_per_sec: float = 0.0  # 吞吐量 (tokens/s)

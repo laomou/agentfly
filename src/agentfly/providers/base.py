@@ -141,6 +141,7 @@ class Provider(ABC):
         for idx, (url, headers, ep_key) in enumerate(candidates):
             result = self._do_test(pkey, model, url, body, headers, timeout)
             if result.status == "ok":
+                result.api_type = ep_key
                 self._on_test_ok(model, ep_key, idx)
                 return result
             if not _should_fallback(result):

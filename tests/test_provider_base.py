@@ -219,16 +219,15 @@ class TestProviderMethods:
         assert any("/v1/chat/completions" in u for u in calls), "fallback 到 openai"
         assert r.latency_ms >= 0
         # 回退成功 → 缓存 api_type + 标记 dirty
-        assert p._find_entry("c1").api_type == "openai"
+        assert p.config.models["c1"] == "openai"
         assert p._cache_dirty is True
 
     def test_custom_cached_api_type_no_fallback_not_dirty(self, monkeypatch):
         """已缓存 api_type → 只试一次, 不标记 dirty."""
         from agentfly.providers.custom import CustomProvider
-        from agentfly.models.schema import ModelEntry
         p = CustomProvider(ProviderConfig(
             name=ProviderType.CUSTOM, api_key="k", base_url="http://x",
-            models=[ModelEntry(name="c1", api_type="openai")]))
+            models={"c1": "openai"}))
 
         class Client:
             _calls = 0

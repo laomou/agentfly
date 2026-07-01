@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import threading
 
-from agentfly.models.schema import ModelEntry, ProviderConfig
+from agentfly.models.schema import ProviderConfig
 from agentfly.models.types import ProviderType
 from agentfly.providers.base import Provider
 
@@ -33,7 +33,7 @@ class CustomProvider(Provider):
     """客制化 Provider — 支持任意 OpenAI/Anthropic 兼容 API.
 
     首次测试对每个模型: 先试 anthropic (/v1/messages), HTTP 400/404 自动
-    回退 openai (/v1/chat/completions). 跑通的接口写入 ModelEntry.api_type,
+    回退 openai (/v1/chat/completions). 跑通的接口写入 config.models[model],
     后续测试直接走缓存, 零额外探测.
     """
 
@@ -55,26 +55,16 @@ class CustomProvider(Provider):
             "messages": [{"role": "user", "content": "hi"}],
         }
 
-    # ── api_type 缓存 ──
-
-    def _find_entry(self, model: str) -> ModelEntry | None:
-        for me in self.config.models:
-            if me.name == model:
-                return me
-        return None
+    # ── api_type 缓存 (config.models: dict[name, api_type]) ──
 
     def _on_test_ok(self, model: str, ep_key: str, idx: int) -> None:
         """回退成功 (idx>0) → 缓存 api_type; 标记 dirty 供上层决定是否写盘."""
         if idx == 0 or not ep_key:
             return
         with self._cache_lock:
-            me = self._find_entry(model)
-            if me is not None:
-                if me.api_type == ep_key:
-                    return
-                me.api_type = ep_key
-            else:
-                self.config.models.append(ModelEntry(name=model, api_type=ep_key))
+            if self.config.models.get(model) == ep_key:
+                return
+            self.config.models[model] = ep_key
             self._cache_dirty = True
 
     # ── 候选端点 ──
@@ -94,9 +84,9 @@ class CustomProvider(Provider):
         if not base:
             return []
 
-        me = self._find_entry(model)
-        if me and me.api_type:
-            return [self._candidate(me.api_type, base, api_key)]
+        cached = self.config.models.get(model)
+        if cached:
+            return [self._candidate(cached, base, api_key)]
 
         return [
             self._candidate("anthropic", base, api_key),

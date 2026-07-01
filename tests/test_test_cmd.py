@@ -10,7 +10,7 @@ from click.testing import CliRunner
 
 from agentfly.cli import test_cmd as tc
 from agentfly.cli.test_cmd import _base, _clear_api_type, _icon, _pad, _resolve, _summary, test
-from agentfly.models.schema import ModelEntry, ProviderConfig, TestResult, UnifiedConfig
+from agentfly.models.schema import ProviderConfig, TestResult, UnifiedConfig
 from agentfly.models.types import ProviderType
 
 
@@ -149,10 +149,10 @@ class TestRefresh:
     def test_clear_api_type(self):
         pc = ProviderConfig(
             name=ProviderType.CUSTOM, api_key="k", base_url="http://x",
-            models=[ModelEntry(name="m1", api_type="openai"), ModelEntry(name="m2")],
+            models={"m1": "openai", "m2": ""},
         )
         _clear_api_type(pc)
-        assert all(me.api_type == "" for me in pc.models)
+        assert all(v == "" for v in pc.models.values())
 
 
 class TestParallelAndTimeout:

@@ -359,8 +359,7 @@ def reload_models(name: str):
     click.echo(f"  从 API 拉取模型...")
     new_models = _fetch_models(provider.base_url, provider.api_key)
     if new_models:
-        from agentfly.models.schema import ModelEntry
-        provider.models = [ModelEntry(name=m) for m in new_models]
+        provider.models = {m: "" for m in new_models}
         provider.default_model = new_models[0]
         mgr.add(provider, key=name)
         mgr.save()
