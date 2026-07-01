@@ -27,6 +27,9 @@ class Claude(Agent):
             env["CLAUDE_CODE_ATTRIBUTION_HEADER"] = "0"
         if config.agent.model:
             env["ANTHROPIC_MODEL"] = config.agent.model
+            # 后台小任务 (标题/摘要等) 也走同一模型, 否则默认打 claude-3-5-haiku-*,
+            # 自定义网关多半没有该模型 → 后台调用 404
+            env["ANTHROPIC_SMALL_FAST_MODEL"] = config.agent.model
         return env
 
     def launch_command(self, config: ResolvedConfig) -> list[str]:

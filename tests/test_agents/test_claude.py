@@ -29,5 +29,10 @@ class TestClaude:
         assert "ANTHROPIC_DEFAULT_SONNET_MODEL" not in env
         assert env["ANTHROPIC_MODEL"] == resolved_config.agent.model
 
+    def test_small_fast_model_follows_main(self, resolved_config):
+        """后台小模型指向同一模型, 避免网关缺 haiku 导致 404."""
+        env = Claude().env_vars(resolved_config)
+        assert env["ANTHROPIC_SMALL_FAST_MODEL"] == resolved_config.agent.model
+
     def test_launch_command(self, resolved_config):
         assert Claude().launch_command(resolved_config)[0] == "claude"
