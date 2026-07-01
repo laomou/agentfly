@@ -14,22 +14,26 @@ from agentfly.providers.registry import get_provider
 
 
 def _complete_providers(ctx: click.Context, param: click.Parameter, incomplete: str) -> list[Any]:
-    """Tab 补全: Provider 名称 或 provider:model."""
-    if ":" in incomplete:
-        provider, partial = incomplete.split(":", 1)
-        config, _ = ensure_config_exists()
-        pc = config.providers.get(provider)
-        if pc and pc.models:
-            return [
-                click.shell_completion.CompletionItem(f"{provider}:{m}")
-                for m in pc.models if m.startswith(partial)
-            ]
-        return []
+    """Tab 补全: Provider 名称."""
     config, _ = ensure_config_exists()
     return [
         click.shell_completion.CompletionItem(name)
         for name in config.providers if name.startswith(incomplete)
     ]
+
+
+def _complete_models(ctx: click.Context, param: click.Parameter, incomplete: str) -> list[Any]:
+    """Tab 补全: 指定 Provider 下的模型名."""
+    config, _ = ensure_config_exists()
+    provider = ctx.params.get("target", "")
+    if provider:
+        pc = config.providers.get(provider)
+        if pc and pc.models:
+            return [
+                click.shell_completion.CompletionItem(m)
+                for m in pc.models if m.startswith(incomplete)
+            ]
+    return []
 
 
 # ── helpers ──
@@ -113,24 +117,29 @@ def _print_json(results: list[TestResult]) -> None:
 
 @click.command(name="test")
 @click.argument("target", required=False, shell_complete=_complete_providers)
+@click.argument("model_name", required=False, shell_complete=_complete_models)
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text", help="输出格式")
-def test(target: str | None, fmt: str) -> None:
+def test(target: str | None, model_name: str | None, fmt: str) -> None:
     """测试模型可用性和延迟 (stream 模式).
 
     \b
     示例:
       agentfly test                           # 全部 Provider 所有模型
       agentfly test deepseek                  # DeepSeek 所有模型
-      agentfly test deepseek:deepseek-chat    # 指定模型
+      agentfly test deepseek deepseek-chat    # 指定模型
+      agentfly test deepseek:deepseek-chat    # 兼容: 写法
       agentfly test --format json             # JSON 输出
     """
     config, _ = ensure_config_exists()
 
-    if target and ":" in target:
+    # 兼容 provider:model 语法
+    if target and not model_name and ":" in target:
+        target, model_name = target.split(":", 1)
+
+    if target and model_name:
         # 单模型
-        pn, model = target.split(":", 1)
-        pc, p = _resolve(config, pn)
-        r = p.test_model(model, pc.api_key, _base(pc), provider_key=pn)
+        pc, p = _resolve(config, target)
+        r = p.test_model(model_name, pc.api_key, _base(pc), provider_key=target)
         _print_table([r]) if fmt == "text" else _print_json([r])
 
     elif target:
