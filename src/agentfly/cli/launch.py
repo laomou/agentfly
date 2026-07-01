@@ -21,12 +21,14 @@ from agentfly.models.types import AgentType
 @click.option("--model", "-m", default=None, help="覆盖默认模型")
 @click.option("--project", "-p", default=None, help="指定项目/工作目录")
 @click.option("--list", "list_agents", is_flag=True, default=False, help="列出所有可启动的 Agent")
+@click.argument("agent_args", nargs=-1)
 def launch(
     agent_name: str | None,
     provider: str | None,
     model: str | None,
     project: str | None,
     list_agents: bool,
+    agent_args: tuple[str, ...] = (),
 ) -> None:
     """启动 AI Agent.
 
@@ -99,7 +101,7 @@ def launch(
     click.echo()
 
     try:
-        exit_code = launcher.launch(resolved, cwd=project)
+        exit_code = launcher.launch(resolved, cwd=project, extra_args=list(agent_args))
         sys.exit(exit_code)
     except LaunchError as e:
         click.secho(f"启动失败: {e}", fg="red")

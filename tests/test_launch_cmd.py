@@ -146,7 +146,7 @@ class _FakeLauncher:
     def __init__(self, adapter):
         pass
 
-    def launch(self, resolved, cwd=None):
+    def launch(self, resolved, cwd=None, extra_args=None):
         _FakeLauncher.last = {
             "provider_key": resolved.agent.provider,
             "model": resolved.agent.model,

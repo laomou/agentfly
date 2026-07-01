@@ -37,6 +37,7 @@ class AgentLauncher:
         resolved: ResolvedConfig,
         *,
         cwd: Optional[str] = None,
+        extra_args: Optional[list[str]] = None,
     ) -> int:
         """启动 Agent.
 
@@ -54,6 +55,8 @@ class AgentLauncher:
         # 1. 获取 agent 产出
         env_vars = self._adapter.env_vars(resolved)
         launch_cmd = self._adapter.launch_command(resolved)
+        if extra_args:
+            launch_cmd = [*launch_cmd, *extra_args]
 
         # 2. Provider 环境变量覆盖 (来自远程 JSON 配置)
         provider = get_provider(resolved.provider)
