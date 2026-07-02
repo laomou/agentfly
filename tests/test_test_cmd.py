@@ -9,7 +9,7 @@ import pytest
 from click.testing import CliRunner
 
 from agentfly.cli import test_cmd as tc
-from agentfly.cli.test_cmd import _clear_api_type, _icon, _pad, _resolve, _summary, test
+from agentfly.cli.test_cmd import _clear_api_type, _expand_models, _icon, _pad, _resolve, _summary, test
 from agentfly.models.schema import ProviderConfig, TestResult, UnifiedConfig
 from agentfly.models.types import ProviderType
 
@@ -90,7 +90,7 @@ class TestCommand:
 
     def test_single_model(self, monkeypatch):
         self._patch(monkeypatch)
-        r = CliRunner().invoke(test, ["deepseek:m1"])
+        r = CliRunner().invoke(test, ["deepseek", "m1"])
         assert r.exit_code == 0
         assert "m1" in r.output and "deepseek" in r.output
 
@@ -108,11 +108,61 @@ class TestCommand:
 
     def test_json_format(self, monkeypatch):
         self._patch(monkeypatch)
-        r = CliRunner().invoke(test, ["deepseek:m1", "--format", "json"])
+        r = CliRunner().invoke(test, ["deepseek", "m1", "--format", "json"])
         assert r.exit_code == 0
         data = json.loads(r.output)
         assert data[0]["model"] == "m1"
         assert data[0]["status"] == "ok"
+
+    def test_wildcard_matches_multiple(self, monkeypatch):
+        self._patch(monkeypatch)
+        r = CliRunner().invoke(test, ["deepseek", "m*"])
+        assert r.exit_code == 0
+        assert "m1" in r.output and "m2" in r.output
+
+    def test_wildcard_no_match_errors(self, monkeypatch):
+        self._patch(monkeypatch)
+        r = CliRunner().invoke(test, ["deepseek", "zzz*"])
+        assert r.exit_code != 0
+        assert "未找到匹配模型" in r.output
+
+
+class TestExpandModels:
+    """_expand_models: 通配符按 fnmatch 展开, 否则精确单模型."""
+
+    @staticmethod
+    def _pc():
+        return ProviderConfig(
+            name=ProviderType.CUSTOM, api_key="k",
+            endpoints={"openai": "http://x"},
+            models=["glm-5.2", "glm-5.2-jigan", "glm-5.2:ksyun", "deepseek-v3"],
+        )
+
+    def test_exact_no_wildcard(self):
+        assert _expand_models(self._pc(), _FakeProvider(), "glm-5.2") == ["glm-5.2"]
+
+    def test_exact_returns_literal_even_if_absent(self):
+        # 无通配符时原样返回, 不校验存在性 (交给后续请求报错)
+        assert _expand_models(self._pc(), _FakeProvider(), "nope") == ["nope"]
+
+    def test_prefix_star(self):
+        assert _expand_models(self._pc(), _FakeProvider(), "glm-5.2*") == [
+            "glm-5.2", "glm-5.2-jigan", "glm-5.2:ksyun",
+        ]
+
+    def test_suffix_star(self):
+        assert _expand_models(self._pc(), _FakeProvider(), "*jigan") == ["glm-5.2-jigan"]
+
+    def test_infix_star(self):
+        assert _expand_models(self._pc(), _FakeProvider(), "*5.2*") == [
+            "glm-5.2", "glm-5.2-jigan", "glm-5.2:ksyun",
+        ]
+
+    def test_question_mark(self):
+        assert _expand_models(self._pc(), _FakeProvider(), "glm-?.2") == ["glm-5.2"]
+
+    def test_no_match_returns_empty(self):
+        assert _expand_models(self._pc(), _FakeProvider(), "zzz*") == []
 
 
 class TestSummary:
@@ -163,6 +213,6 @@ class TestParallelAndTimeout:
 
         monkeypatch.setattr(tc, "ensure_config_exists", lambda: (_cfg(), "p"))
         monkeypatch.setattr(tc, "get_provider", lambda pc: RecordingProvider())
-        r = CliRunner().invoke(test, ["deepseek:m1", "-t", "7"])
+        r = CliRunner().invoke(test, ["deepseek", "m1", "-t", "7"])
         assert r.exit_code == 0
         assert seen["timeout"] == 7.0

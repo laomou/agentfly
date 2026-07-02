@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from fnmatch import fnmatchcase
 from typing import Any
 
 import click
@@ -41,6 +42,17 @@ def _clear_api_type(pc: ProviderConfig) -> None:
     """--refresh: 清空 api_type 缓存, 强制重新探测."""
     for name in pc.models:
         pc.models[name] = ""
+
+
+def _expand_models(pc: ProviderConfig, p, pattern: str) -> list[str]:
+    """展开模型名: 含 * / ? 时按 fnmatch 在候选清单里筛, 否则原样返回单元素.
+
+    候选来自 pc.model_names (配置的模型), 兜底 p.list_models(). 大小写敏感.
+    """
+    if "*" not in pattern and "?" not in pattern:
+        return [pattern]
+    candidates = [m for m in (pc.model_names or p.list_models()) if m]
+    return [m for m in candidates if fnmatchcase(m, pattern)]
 
 
 def _save_cache(config, key: str, pc: ProviderConfig, p) -> None:
@@ -159,11 +171,11 @@ def _run_models(
     return [by_model[m] for m in models if m in by_model]
 
 
-def _test_provider(
-    config, pc: ProviderConfig, p, provider_key: str,
+def _test_provider_models(
+    config, pc: ProviderConfig, p, provider_key: str, models: list[str],
     *, parallel: int, timeout: float, stream: bool = True,
 ) -> list[TestResult]:
-    models = [m for m in (pc.model_names or p.list_models()) if m]
+    """测试指定模型列表, 流式打印表格, 结束后回写 api_type 缓存."""
     if not models:
         return []
 
@@ -182,6 +194,16 @@ def _test_provider(
         click.echo(f"  → {_summary(results)}")
     _save_cache(config, provider_key, pc, p)
     return results
+
+
+def _test_provider(
+    config, pc: ProviderConfig, p, provider_key: str,
+    *, parallel: int, timeout: float, stream: bool = True,
+) -> list[TestResult]:
+    models = [m for m in (pc.model_names or p.list_models()) if m]
+    return _test_provider_models(
+        config, pc, p, provider_key, models, parallel=parallel, timeout=timeout, stream=stream,
+    )
 
 
 # ── command ──
@@ -204,7 +226,7 @@ def test(
       agentfly test                           # 全部 Provider 所有模型
       agentfly test deepseek                  # DeepSeek 所有模型
       agentfly test deepseek deepseek-chat    # 指定模型
-      agentfly test deepseek:deepseek-chat    # 兼容写法
+      agentfly test deepseek 'deepseek-*'     # 通配符匹配一组模型
       agentfly test -p 8 -t 15                # 8 并发, 15s 超时
       agentfly test stepcode --refresh        # 强制重探接口
       agentfly test --format json             # JSON 输出
@@ -212,18 +234,20 @@ def test(
     config, _ = ensure_config_exists()
     parallel = max(1, parallel)
 
-    # 兼容 provider:model 语法
-    if target and not model_name and ":" in target:
-        target, model_name = target.split(":", 1)
-
     if target and model_name:
-        # 单模型
+        # 单模型 (或通配符匹配的一组模型)
         pc, p = _resolve(config, target)
         if refresh:
             _clear_api_type(pc)
-        r = p.test_model(model_name, pc.api_key, provider_key=target, timeout=timeout)
-        _print_table([r]) if fmt == "text" else _print_json([r])
-        _save_cache(config, target, pc, p)
+        models = _expand_models(pc, p, model_name)
+        if not models:
+            raise click.ClickException(f"未找到匹配模型: {model_name}")
+        stream = fmt == "text"
+        results = _test_provider_models(
+            config, pc, p, target, models, parallel=parallel, timeout=timeout, stream=stream,
+        )
+        if fmt == "json":
+            _print_json(results)
         return
 
     if target:

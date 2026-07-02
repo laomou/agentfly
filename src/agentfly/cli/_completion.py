@@ -25,7 +25,11 @@ def complete_providers(
 
 
 def model_completer(provider_param: str) -> Callable[..., list[Any]]:
-    """构造 model 补全器: 从 ctx.params[provider_param] 定位 Provider 再列模型."""
+    """构造 model 补全器: 从 ctx.params[provider_param] 定位 Provider 再列模型.
+
+    前缀补全. 带通配符 (如 name*) 时无模型以字面 '*' 开头, 自然返回空 —
+    不补全, 从而保留用户输入的 '*' 不被 shell 用公共前缀改写掉.
+    """
     def _complete(ctx: click.Context, param: click.Parameter, incomplete: str) -> list[Any]:
         config, _ = ensure_config_exists()
         pc = config.providers.get(ctx.params.get(provider_param, ""))
