@@ -5,6 +5,7 @@ from __future__ import annotations
 from agentfly.agents.base import Agent
 from agentfly.models.schema import ResolvedConfig
 from agentfly.models.types import AgentType
+from agentfly.providers.anthropic import is_official_anthropic_base
 
 
 class Claude(Agent):
@@ -22,8 +23,11 @@ class Claude(Agent):
         env: dict[str, str] = {
             "ANTHROPIC_AUTH_TOKEN": config.provider.api_key,
         }
-        if config.effective_api_base:
-            env["ANTHROPIC_BASE_URL"] = config.effective_api_base
+        base = config.effective_api_base
+        if base and not is_official_anthropic_base(base):
+            # 仅自定义网关: 覆盖 BASE_URL, 并关掉 attribution header
+            # (网关多不认该 header, 官方端点则保持 Claude Code 默认行为)
+            env["ANTHROPIC_BASE_URL"] = base
             env["CLAUDE_CODE_ATTRIBUTION_HEADER"] = "0"
         if config.agent.model:
             env["ANTHROPIC_MODEL"] = config.agent.model
