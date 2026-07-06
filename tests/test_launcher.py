@@ -18,7 +18,8 @@ class TestAdapterEnvVars:
     def test_claude_env(self, resolved_config):
         env = Claude().env_vars(resolved_config)
         assert "ANTHROPIC_AUTH_TOKEN" in env
-        assert "ANTHROPIC_BASE_URL" in env
+        # 官方端点 fixture: 不覆盖 BASE_URL (保持 Claude Code 默认)
+        assert "ANTHROPIC_BASE_URL" not in env
 
 
 class _FakeAdapter(Agent):

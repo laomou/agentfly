@@ -17,10 +17,21 @@ class TestClaude:
     def test_preferred_format(self):
         assert Claude().preferred_format == "anthropic"
 
-    def test_env_vars(self, resolved_config):
+    def test_env_vars_official_endpoint(self, resolved_config):
+        """官方端点: 不覆盖 BASE_URL, 不关 attribution header (保持 CC 默认)."""
         env = Claude().env_vars(resolved_config)
         assert env["ANTHROPIC_AUTH_TOKEN"] == "test-key-123"
-        assert "ANTHROPIC_BASE_URL" in env
+        assert "ANTHROPIC_BASE_URL" not in env
+        assert "CLAUDE_CODE_ATTRIBUTION_HEADER" not in env
+
+    def test_env_vars_custom_gateway(self, resolved_config):
+        """自定义网关: 覆盖 BASE_URL 并关掉 attribution header."""
+        rc = resolved_config.model_copy(
+            update={"effective_api_base": "https://my-gateway.example.com"}
+        )
+        env = Claude().env_vars(rc)
+        assert env["ANTHROPIC_BASE_URL"] == "https://my-gateway.example.com"
+        assert env["CLAUDE_CODE_ATTRIBUTION_HEADER"] == "0"
 
     def test_env_vars_no_model_derivation(self, resolved_config):
         """adapter 不推导模型角色，由 provider.env_for 负责."""
