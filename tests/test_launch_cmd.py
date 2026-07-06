@@ -10,6 +10,7 @@ from click.testing import CliRunner
 
 from agentfly.cli import launch as launch_mod
 from agentfly.cli.launch import (
+    _match_name,
     _prompt_select,
     _select_model,
     _select_provider,
@@ -84,7 +85,7 @@ class TestSelectProvider:
 
     def test_multiple_tty_prompts(self, tty, monkeypatch):
         # 模拟用户选第 2 项
-        monkeypatch.setattr("agentfly.cli.launch.click.prompt", lambda *a, **k: 2)
+        monkeypatch.setattr("agentfly.cli.launch.click.prompt", lambda *a, **k: "2")
         cfg = UnifiedConfig(providers={"a": _provider(), "b": _provider()})
         assert _select_provider(cfg, "codex", "openai") == "b"
 
@@ -102,16 +103,66 @@ class TestSelectModel:
         assert _select_model(_provider(models=["m1", "m2"])) is None
 
     def test_multiple_tty_prompts(self, tty, monkeypatch):
-        monkeypatch.setattr("agentfly.cli.launch.click.prompt", lambda *a, **k: 2)
+        monkeypatch.setattr("agentfly.cli.launch.click.prompt", lambda *a, **k: "2")
         assert _select_model(_provider(models=["m1", "m2"], default="m1")) == "m2"
 
 
-class TestPromptSelect:
-    """_prompt_select 编号 → 选项 映射."""
+class TestMatchName:
+    """_match_name 名称匹配逻辑."""
 
-    def test_returns_indexed_item(self, monkeypatch):
-        monkeypatch.setattr("agentfly.cli.launch.click.prompt", lambda *a, **k: 1)
+    def test_exact_match(self):
+        assert _match_name("foo", ["foo", "bar", "baz"]) == "foo"
+
+    def test_exact_match_case_insensitive(self):
+        assert _match_name("FOO", ["foo", "bar"]) == "foo"
+
+    def test_prefix_match(self):
+        assert _match_name("foz", ["foo", "bar", "foz"]) == "foz"
+
+    def test_prefix_ambiguous_returns_none(self):
+        assert _match_name("f", ["foo", "bar", "foz"]) is None
+
+    def test_substring_match(self):
+        assert _match_name("oo", ["foo", "bar"]) == "foo"
+
+    def test_substring_ambiguous_returns_none(self):
+        assert _match_name("o", ["foo", "foz", "bar"]) is None
+
+    def test_no_match_returns_none(self):
+        assert _match_name("x", ["foo", "bar"]) is None
+
+    def test_empty_text_returns_none(self):
+        assert _match_name("", ["foo", "bar"]) is None
+
+
+class TestPromptSelect:
+    """_prompt_select 编号/名称 → 选项 映射."""
+
+    def test_number_selects_item(self, monkeypatch):
+        monkeypatch.setattr("agentfly.cli.launch.click.prompt", lambda *a, **k: "1")
         assert _prompt_select("X", ["foo", "bar"]) == "foo"
+
+    def test_name_selects_item(self, monkeypatch):
+        monkeypatch.setattr("agentfly.cli.launch.click.prompt", lambda *a, **k: "bar")
+        assert _prompt_select("X", ["foo", "bar"]) == "bar"
+
+    def test_name_case_insensitive(self, monkeypatch):
+        monkeypatch.setattr("agentfly.cli.launch.click.prompt", lambda *a, **k: "BAR")
+        assert _prompt_select("X", ["foo", "bar"]) == "bar"
+
+    def test_name_prefix(self, monkeypatch):
+        monkeypatch.setattr("agentfly.cli.launch.click.prompt", lambda *a, **k: "ba")
+        assert _prompt_select("X", ["foo", "bar"]) == "bar"
+
+    def test_invalid_then_valid_retries(self, monkeypatch):
+        """首次无效，二次有效."""
+        calls = iter(["99", "2"])
+
+        def fake(*a, **k):
+            return next(calls)
+
+        monkeypatch.setattr("agentfly.cli.launch.click.prompt", fake)
+        assert _prompt_select("X", ["foo", "bar", "baz"]) == "bar"
 
     def test_default_index_points_to_default(self, monkeypatch):
         captured: dict = {}
@@ -123,7 +174,7 @@ class TestPromptSelect:
         monkeypatch.setattr("agentfly.cli.launch.click.prompt", fake_prompt)
         # default="bar" 是第 2 项，回车应选中它
         assert _prompt_select("X", ["foo", "bar"], default="bar") == "bar"
-        assert captured["default"] == 2
+        assert captured["default"] == "2"
 
 
 class _FakeAdapter:

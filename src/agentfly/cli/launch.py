@@ -119,10 +119,36 @@ def launch(
         sys.exit(1)
 
 
+def _match_name(text: str, items: list[str]) -> str | None:
+    """名称匹配: 精确 > 前缀 > 子串 (大小写不敏感).
+
+    返回匹配到的原始项; 0 个或 >1 个 (歧义) 返回 None.
+    """
+    lower = text.lower()
+    # 1) 精确
+    for item in items:
+        if item.lower() == lower:
+            return item
+    # 2) 前缀
+    matched = [item for item in items if item.lower().startswith(lower)]
+    if len(matched) == 1:
+        return matched[0]
+    if len(matched) > 1:
+        return None  # 歧义，让用户输完整
+    # 3) 子串
+    matched = [item for item in items if lower in item.lower()]
+    if len(matched) == 1:
+        return matched[0]
+    return None
+
+
 def _prompt_select(label: str, items: list[str], default: str | None = None) -> str:
     """打印编号菜单让用户选择，返回选中项.
 
-    default 命中某项时，回车即选中该项.
+    支持数字或名称:
+      - 数字 1-N   → 选中对应项
+      - 名称 (精确/前缀/子串, 大小写不敏感) → 选中匹配项
+    default 命中某项时回车即选中.
     """
     default_idx: int | None = None
     click.echo(f"  选择 {label}:")
@@ -132,13 +158,32 @@ def _prompt_select(label: str, items: list[str], default: str | None = None) -> 
             suffix = "  (默认)"
             default_idx = i
         click.echo(f"    {i}) {item}{suffix}")
-    idx = click.prompt(
-        "  输入编号",
-        type=click.IntRange(1, len(items)),
-        default=default_idx,
-        show_default=default_idx is not None,
-    )
-    return items[idx - 1]
+    while True:
+        raw = click.prompt(
+            "  输入编号或名称",
+            type=str,
+            default=str(default_idx) if default_idx is not None else "",
+            show_default=default_idx is not None,
+        )
+        raw = raw.strip()
+        # 回车 + 有默认 → 默认项
+        if not raw and default_idx is not None:
+            return items[default_idx - 1]
+
+        # 数字
+        try:
+            idx = int(raw)
+            if 1 <= idx <= len(items):
+                return items[idx - 1]
+        except ValueError:
+            pass
+
+        # 名称
+        matched = _match_name(raw, items)
+        if matched is not None:
+            return matched
+
+        click.echo(f"  无效输入，请输入 1-{len(items)} 之间的编号或项目名称")
 
 
 def _select_provider(config: UnifiedConfig, agent_name: str, preferred_format: str) -> str:
