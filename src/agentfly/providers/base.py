@@ -6,6 +6,7 @@ import json
 import threading
 import time
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import httpx
@@ -24,6 +25,8 @@ _PATHS = {
     "anthropic": "/v1/messages",
     "openai": "/v1/chat/completions",
 }
+# Responses API (codex 依赖) — 独立探针, 不进 _PATHS/_PROBE_ORDER
+_RESPONSES_PATH = "/v1/responses"
 # 无缓存时的探测优先级
 _PROBE_ORDER = ("anthropic", "openai")
 
@@ -129,6 +132,81 @@ class Provider(ABC):
             return delta.get("text") or delta.get("thinking") or ""
         return None
 
+    # ── Responses API 探针 (codex 依赖的 /v1/responses) ──
+
+    def _build_responses_request(self, model: str) -> dict:
+        """构建 Responses API 测试请求 (input 而非 messages)."""
+        return {
+            "model": model,
+            "input": _TEST_PROMPT,
+            "stream": True,
+        }
+
+    def _parse_responses_chunk(self, line: str) -> str | None:
+        """解析 Responses API SSE 一行.
+
+        Responses 事件: response.output_text.delta / response.reasoning.delta,
+        delta 为字符串 (非对象).
+        """
+        if not line.startswith("data: "):
+            return None
+        data_str = line[6:]
+        if data_str == "[DONE]":
+            return None
+        try:
+            chunk = json.loads(data_str)
+        except json.JSONDecodeError:
+            return None
+        t = chunk.get("type", "")
+        if t in ("response.output_text.delta", "response.reasoning.delta"):
+            return chunk.get("delta") or ""
+        return None
+
+    def _probe_responses(
+        self, pkey: str, model: str, api_key: str, base_url: str | None, timeout: float,
+    ) -> TestResult | None:
+        """探测 /v1/responses (codex 依赖) 并测指标.
+
+        200 且收到至少一个 response.* 文本增量事件 → 返回 TestResult(ok,
+        api_type=responses, 带 latency/TTFT/TPS); 否则 None (不支持/未测).
+        读到流结束算指标 (测试 prompt 回复短, 并发跑不拖慢主探测).
+        """
+        if not base_url:
+            return None
+        url = f"{base_url.rstrip('/')}{_RESPONSES_PATH}"
+        headers = _headers("openai", api_key)
+        body = self._build_responses_request(model)
+        try:
+            t_start = time.monotonic()
+            ttft_ms = 0.0
+            char_count = 0
+            with httpx.Client(timeout=httpx.Timeout(timeout)) as client:
+                with client.stream("POST", url, json=body, headers=headers) as resp:
+                    if resp.status_code != 200:
+                        return None
+                    first_token = True
+                    for line in resp.iter_lines():
+                        content = self._parse_responses_chunk(line)
+                        if not content:
+                            continue
+                        if first_token:
+                            ttft_ms = (time.monotonic() - t_start) * 1000
+                            first_token = False
+                        char_count += len(content)
+            if char_count == 0:
+                return None  # 200 但无文本增量事件 → 不算支持
+            total_ms = (time.monotonic() - t_start) * 1000
+            token_count = char_count // 4
+            gen_ms = total_ms - ttft_ms  # 生成阶段时间, 同 _do_test
+            tps = token_count * 1000 / gen_ms if gen_ms > 0 else 0
+            return TestResult(
+                provider=pkey, model=model, status="ok", api_type="responses",
+                latency_ms=round(total_ms, 1), ttft_ms=round(ttft_ms, 1),
+                tokens_per_sec=round(tps, 1),
+            )
+        except Exception:
+            return None
+
     # ── 候选端点 (基于 config.endpoints) ──
 
     def _api_types(self, model: str) -> list[str]:
@@ -165,14 +243,41 @@ class Provider(ABC):
         provider_key: str = "",
         timeout: float = _DEFAULT_TIMEOUT_S,
     ) -> TestResult:
-        """流式测试模型: 探测所有候选接口, 取最快的报告.
+        """流式测试模型: 探测所有候选接口, 取最快的报告; 并发探 /v1/responses.
 
-        - ok: 收集; 接口不匹配 (400/404/…): 试下一个候选; 其他错误: 立即返回.
-        - 多个接口都通时 api_type 记成 "anthropic,openai" (速度快的在前),
+        - 主探测 (chat/messages): ok 收集; 接口不匹配 (400/404/…) 试下一个; 其他错误直接返回.
+        - responses 探针: 与主探测并发, 仅 openai 端点跑; 成功则把 "openai_responses"
+          附加到 api_type 末尾 (不参与速度排名, 不进缓存).
+        - 多个接口都通时 api_type 记成 "anthropic,openai[,openai_responses]" (速度快的在前),
           Total/TTFT/TPS 显示最快接口的指标.
         """
         pkey = provider_key or self.config.name.value
         key = api_key or self.config.api_key
+        base = self.config.endpoints.get("openai")
+
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            main_fut = ex.submit(self._test_main, pkey, model, key, timeout)
+            resp_fut = (
+                ex.submit(self._probe_responses, pkey, model, key, base, timeout) if base else None
+            )
+            result = main_fut.result()
+            resp_result = resp_fut.result() if resp_fut is not None else None
+
+        if resp_result is not None:  # responses 可用
+            if result.status == "ok":
+                # 主探测 ok → responses 仅作为附加协议标记 (不参与速度排名)
+                ordered = [t for t in result.api_type.split(",") if t]
+                ordered.append("responses")
+                result.api_type = ",".join(ordered)
+            else:
+                # 主探测失败但 responses 可用 (如 codex-only 模型) → responses 兜底
+                result = resp_result
+        return result
+
+    def _test_main(
+        self, pkey: str, model: str, key: str, timeout: float,
+    ) -> TestResult:
+        """主探测: chat/messages 候选串行回退, 取最快."""
         body = {**self._build_test_request(model), "stream": True}
 
         candidates = self._test_candidates(model, key)
@@ -236,7 +341,10 @@ class Provider(ABC):
             total_ms = (time.monotonic() - t_start) * 1000
             # 累计字符数最后统一 /4 估算 token, 避免按碎 chunk 逐片取整高估
             token_count = char_count // 4
-            tps = token_count * 1000 / total_ms if total_ms > 0 else 0
+            # TPS 用生成阶段时间 (Total - TTFT), 反映纯生成速度;
+            # 否则 TTFT 占比高的推理模型会被低估
+            gen_ms = total_ms - ttft_ms
+            tps = token_count * 1000 / gen_ms if gen_ms > 0 else 0
 
             return result(
                 status="ok",

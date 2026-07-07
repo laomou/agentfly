@@ -18,9 +18,9 @@ from agentfly.providers.registry import get_provider
 
 _STATUS_ICONS = {"ok": "✅", "timeout": "⏳", "error": "❌", "unauthorized": "❌"}
 _COL_STATUS, _COL_LATENCY, _COL_TTFT, _COL_TPS = 14, 8, 8, 8
-# API 列: api_type 取值封闭 (openai/anthropic), 最长组合 "openai,anthropic" = 16.
+# API 列: api_type 取值 openai/anthropic/responses, 最长组合 "anthropic,openai,responses" = 24.
 # 流式输出时还拿不到全部行, 用该上限保证不溢出; 非流式则按实际内容动态取宽.
-_COL_API_MAX = len("openai,anthropic")
+_COL_API_MAX = len("anthropic,openai,responses")
 _DEFAULT_PARALLEL = 4
 
 
@@ -75,12 +75,19 @@ def _icon(status: str) -> str:
 
 
 def _pad(val: float) -> str:
-    """格式化数值: ms/s 或 `-`."""
+    """格式化时间数值: ms/s 或 `-`."""
     if val <= 0:
         return "-"
     if val < 1000:
         return f"{val:.0f}ms"
     return f"{val / 1000:.1f}s"
+
+
+def _tps(val: float) -> str:
+    """格式化吞吐量 (tokens/s) 或 `-`."""
+    if val <= 0:
+        return "-"
+    return f"{val:.1f}"
 
 
 def _header(model_w: int, api_w: int) -> str:
@@ -107,7 +114,7 @@ def _row(r: TestResult, model_w: int, api_w: int) -> str:
         f"{(r.api_type or '-'):<{api_w}}  "
         f"{_pad(r.latency_ms):<{_COL_LATENCY}}  "
         f"{_pad(r.ttft_ms):<{_COL_TTFT}}  "
-        f"{_pad(r.tokens_per_sec):<{_COL_TPS}}"
+        f"{_tps(r.tokens_per_sec):<{_COL_TPS}}"
     )
 
 

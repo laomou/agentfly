@@ -9,7 +9,7 @@ import pytest
 from click.testing import CliRunner
 
 from agentfly.cli import test_cmd as tc
-from agentfly.cli.test_cmd import _clear_api_type, _expand_models, _icon, _pad, _resolve, _summary, test
+from agentfly.cli.test_cmd import _clear_api_type, _expand_models, _icon, _pad, _resolve, _summary, _tps, test
 from agentfly.models.schema import ProviderConfig, TestResult, UnifiedConfig
 from agentfly.models.types import ProviderType
 
@@ -41,6 +41,20 @@ class TestIcon:
 
     def test_unknown(self):
         assert _icon("whatever") == "❓"
+
+
+
+class TestTps:
+    """_tps 吞吐量格式化 (tokens/s, 非时间)."""
+
+    def test_zero_and_negative(self):
+        assert _tps(0) == "-"
+        assert _tps(-1) == "-"
+
+    def test_format(self):
+        assert _tps(6.0) == "6.0"
+        assert _tps(30.0) == "30.0"
+        assert _tps(123.4) == "123.4"
 
 
 

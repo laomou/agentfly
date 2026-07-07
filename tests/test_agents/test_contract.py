@@ -87,8 +87,14 @@ def test_openai_base_url_appends_v1():
 
 
 def test_codex_base_url_has_v1():
-    env = Codex().env_vars(_resolved_for(Codex()))
-    assert env["OPENAI_BASE_URL"].endswith("/v1")
+    # OPENAI_BASE_URL 在 codex 0.142+ 失效, 改用 -c 注入; base_url 须以 /v1 结尾
+    adapter = Codex()
+    env = adapter.env_vars(_resolved_for(adapter))
+    assert "OPENAI_BASE_URL" not in env
+    cmd = adapter.launch_command(_resolved_for(adapter))
+    joined = " ".join(cmd)
+    assert 'base_url="https://api.openai.com/v1"' in joined
+    assert 'wire_api="responses"' in joined
 
 
 def test_opencode_config_content_has_v1():
