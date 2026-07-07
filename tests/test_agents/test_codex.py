@@ -7,7 +7,7 @@ from agentfly.models.schema import AgentConfig, ProviderConfig, ResolvedConfig
 from agentfly.models.types import AgentType, ProviderType
 
 
-def make_codex_config():
+def make_codex_config(api_base: str = "https://api.openai.com") -> ResolvedConfig:
     provider = ProviderConfig(
         name=ProviderType.OPENAI,
         api_key="sk-test",
@@ -23,7 +23,7 @@ def make_codex_config():
     return ResolvedConfig(
         agent=agent,
         provider=provider,
-        effective_api_base="https://api.openai.com",
+        effective_api_base=api_base,
         effective_api_format="openai",
     )
 
@@ -38,29 +38,25 @@ class TestCodex:
         assert self._adapter.name == AgentType.CODEX
         assert self._adapter.display_name == "Codex"
 
-    def test_env_vars_only_api_key(self):
-        # 不再用 OPENAI_BASE_URL 重定向 (codex 内置 provider 仍走 responses)
+    def test_env_vars(self):
         env = self._adapter.env_vars(make_codex_config())
-        assert env == {"OPENAI_API_KEY": "sk-test"}
 
-    def test_launch_command_forces_chat_completions(self):
+        assert env["OPENAI_API_KEY"] == "sk-test"
+        assert env["OPENAI_BASE_URL"].endswith("/v1")
+
+    def test_launch_command(self):
         cmd = self._adapter.launch_command(make_codex_config())
-        joined = " ".join(cmd)
 
-        assert cmd[0] == "codex"
-        # 用 -c 覆盖注入自定义 chat_completions provider
-        assert "-c" in cmd
-        assert 'model_provider="agentfly"' in cmd
-        assert 'wire_api="chat_completions"' in joined
-        # base_url 需以 /v1 结尾
-        assert 'base_url="https://api.openai.com/v1"' in joined
-        assert 'env_key="OPENAI_API_KEY"' in joined
-        # 模型透传
+        assert "codex" in cmd[0]
         assert "--model" in cmd
         assert "gpt-4o" in cmd
 
-    def test_no_model_no_model_flag(self):
-        cfg = make_codex_config()
-        cfg.agent.model = None
-        cmd = self._adapter.launch_command(cfg)
-        assert "--model" not in cmd
+    def test_pre_launch_silent_for_official_endpoint(self, capsys):
+        self._adapter.pre_launch(make_codex_config("https://api.openai.com"))
+        assert capsys.readouterr().err == ""
+
+    def test_pre_launch_warns_for_third_party_endpoint(self, capsys):
+        self._adapter.pre_launch(make_codex_config("https://api.deepseek.com"))
+        err = capsys.readouterr().err
+        assert "Responses API" in err
+        assert "https://github.com/openai/codex/discussions/7782" in err
