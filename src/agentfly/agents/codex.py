@@ -1,36 +1,39 @@
 """Codex (OpenAI) Agent 适配器.
 
-Codex 自 2026/02 起内置 openai provider 固定走 Responses API (/v1/responses)，
-仅靠 OPENAI_BASE_URL 重定向无法让仅支持 Chat Completions 的第三方 provider
-调通 (codex 仍会请求 /v1/responses)。
+Codex 自 2026/02 (PR #10157) 起彻底移除 Chat Completions wire_api 支持，
+model_providers[*].wire_api 仅接受 "responses"，所有 provider 必须实现
+Responses API (/v1/responses)。
 
-解法: 用 codex 的 `-c key=value` 配置覆盖 (点路径可创建新表) 注入一个自定义
-model_provider，设 wire_api="chat_completions"，让 codex 走 /v1/chat/completions
-调用第三方 OpenAI 兼容端点。全程不落盘、不碰用户 ~/.codex，退出即焚。
+本适配器用 OPENAI_BASE_URL 把 codex 内置 openai provider 重定向到第三方端点
+(该 provider 固定走 responses wire_api)。若第三方端点只支持 /v1/chat/completions，
+调用会失败——需经支持 Responses API 的网关/代理 (LiteLLM、llama.cpp server、
+VibeAround 等) 转换。pre_launch 会对非 OpenAI 官方端点打印提示。
 
-参考 ollama cmd/launch/codex.go 的 `-c model_providers.<name>.wire_api=...` 用法
-(ollama 自家 server 实现 Responses API 故用 "responses"; 此处面向第三方端点用
-"chat_completions")。
+详见 https://github.com/openai/codex/discussions/7782
 """
 
 from __future__ import annotations
+
+import sys
+from urllib.parse import urlparse
 
 from agentfly.agents.base import Agent, openai_base_url
 from agentfly.models.schema import ResolvedConfig
 from agentfly.models.types import AgentType
 
-# 我们注入的 provider key (与 codex 内置 openai 区分)
-_PROVIDER = "agentfly"
+# OpenAI 官方端点 host —— 命中则视为原生支持 Responses API，无需提示
+_OFFICIAL_HOSTS = {"api.openai.com"}
 
 
 class Codex(Agent):
     """OpenAI Codex CLI 适配器.
 
     需要环境变量:
-    - OPENAI_API_KEY  (codex 经 env_key 读取)
+    - OPENAI_API_KEY
+    - OPENAI_BASE_URL (以 /v1 结尾，重定向内置 openai provider)
 
-    注意: 自 2026/02 起 Codex 仅原生支持 Responses API (/v1/responses)，
-    本适配器通过 wire_api="chat_completions" 让其兼容第三方 OpenAI 兼容端点。
+    注意: 自 2026/02 起 Codex 仅支持 Responses API (/v1/responses)，
+    仅支持 Chat Completions 的第三方 provider 需经代理转换。
     """
 
     name = AgentType.CODEX
@@ -38,22 +41,29 @@ class Codex(Agent):
     preferred_format = "openai"
 
     def env_vars(self, config: ResolvedConfig) -> dict[str, str]:
-        return {
+        env = {
             "OPENAI_API_KEY": config.provider.api_key,
         }
+        if config.effective_api_base:
+            env["OPENAI_BASE_URL"] = openai_base_url(config.effective_api_base)
+        return env
 
     def launch_command(self, config: ResolvedConfig) -> list[str]:
-        base_url = openai_base_url(config.effective_api_base)
-        p = _PROVIDER
         cmd = ["codex"]
-        # -c 覆盖: 定义一个 chat_completions provider 并选用它
-        cmd += [
-            "-c", f'model_provider="{p}"',
-            "-c", f'model_providers.{p}.name="AgentFly"',
-            "-c", f'model_providers.{p}.base_url="{base_url}"',
-            "-c", f'model_providers.{p}.env_key="OPENAI_API_KEY"',
-            "-c", f'model_providers.{p}.wire_api="chat_completions"',
-        ]
         if config.agent.model:
-            cmd += ["--model", config.agent.model]
+            cmd.extend(["--model", config.agent.model])
         return cmd
+
+    def pre_launch(self, config: ResolvedConfig) -> None:
+        """第三方端点提示: codex 仅支持 Responses API,纯 Chat Completions 端点需代理."""
+        host = (urlparse(config.effective_api_base).hostname or "").lower()
+        if not host or host in _OFFICIAL_HOSTS:
+            return
+        print(
+            f"  ⚠ codex 仅支持 Responses API (/v1/responses)。端点 "
+            f"{config.effective_api_base} 若只支持 Chat Completions，需经支持"
+            f" Responses API 的网关/代理 (如 LiteLLM、llama.cpp server) 转换，"
+            f"否则调用会失败。\n"
+            f"  详见 https://github.com/openai/codex/discussions/7782",
+            file=sys.stderr,
+        )
