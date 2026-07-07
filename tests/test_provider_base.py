@@ -258,7 +258,7 @@ class TestProviderMethods:
         monkeypatch.setattr("agentfly.providers.base.httpx.Client", Client)
         r = p.test_model("c1")
         assert r.status == "ok"
-        assert Client._calls == 1  # 无探测 anthropic
+        assert Client._calls == 2  # 缓存 openai 仅主探测 1 + responses 探针 1
         assert p._cache_dirty is False
 
     def test_custom_both_interfaces_ok_records_both(self, monkeypatch):
@@ -290,7 +290,7 @@ class TestProviderMethods:
         monkeypatch.setattr("agentfly.providers.base.httpx.Client", Client)
         r = p.test_model("c1")
         assert r.status == "ok"
-        assert Client._calls == 2                    # 两个接口都探
+        assert Client._calls == 3                    # anthropic + openai + responses 探针
         assert set(r.api_type.split(",")) == {"anthropic", "openai"}
         assert set(p.config.models["c1"].split(",")) == {"anthropic", "openai"}
         assert p._cache_dirty is True
@@ -350,7 +350,7 @@ class TestProviderMethods:
         monkeypatch.setattr("agentfly.providers.base.httpx.Client", AuthClient)
         r = p.test_model("c1")
         assert r.status == "unauthorized"
-        assert AuthClient._calls == 1  # 只试了一次, 没 fallback
+        assert AuthClient._calls == 2  # anthropic 1 + responses 探针 1
 
     def test_custom_anthropic_timeout_no_fallback(self, monkeypatch):
         """anthropic 超时 → 直接返回, 不回退."""
@@ -379,7 +379,7 @@ class TestProviderMethods:
         monkeypatch.setattr("agentfly.providers.base.httpx.Client", TimeoutClient)
         r = p.test_model("c1")
         assert r.status == "timeout"
-        assert TimeoutClient._calls == 1
+        assert TimeoutClient._calls == 2  # anthropic 1 + responses 探针 1
 
     def test_custom_no_base_url_returns_error(self, monkeypatch):
         """没有 base_url → error."""
@@ -403,6 +403,133 @@ class TestProviderMethods:
         assert p._parse_stream_chunk('data: {"type":"message_delta","delta":{}}') is None
         assert p._parse_stream_chunk("data: [DONE]") is None
         assert p._parse_stream_chunk("not data") is None
+
+
+class TestResponsesProbe:
+    """/v1/responses 探针: 解析 + 探测 + test_model 集成."""
+
+    def test_parse_output_text_delta(self):
+        line = 'data: {"type":"response.output_text.delta","delta":"hi"}'
+        assert _openai_provider()._parse_responses_chunk(line) == "hi"
+
+    def test_parse_reasoning_delta(self):
+        line = 'data: {"type":"response.reasoning.delta","delta":"think"}'
+        assert _openai_provider()._parse_responses_chunk(line) == "think"
+
+    def test_parse_non_delta_event(self):
+        line = 'data: {"type":"response.created","response":{}}'
+        assert _openai_provider()._parse_responses_chunk(line) is None
+
+    def test_parse_done_and_bad(self):
+        assert _openai_provider()._parse_responses_chunk("data: [DONE]") is None
+        assert _openai_provider()._parse_responses_chunk("data: nope") is None
+        assert _openai_provider()._parse_responses_chunk(": comment") is None
+
+    def test_probe_ok_on_200_with_delta(self, monkeypatch):
+        lines = [
+            'data: {"type":"response.created","response":{}}',
+            'data: {"type":"response.output_text.delta","delta":"hi"}',
+        ]
+        _patch_client(monkeypatch, stream=_FakeStream(200, lines))
+        r = _openai_provider()._probe_responses("p", "gpt-4o", "sk-x", "https://api.openai.com", 10.0)
+        assert r is not None
+        assert r.status == "ok"
+        assert r.api_type == "responses"
+        assert r.ttft_ms >= 0
+
+    def test_probe_none_on_404(self, monkeypatch):
+        _patch_client(monkeypatch, stream=_FakeStream(404, []))
+        assert _openai_provider()._probe_responses("p", "gpt-4o", "sk-x", "http://x", 10.0) is None
+
+    def test_probe_none_on_exception(self, monkeypatch):
+        _patch_client(monkeypatch, exc=httpx.ConnectError("x"))
+        assert _openai_provider()._probe_responses("p", "gpt-4o", "sk-x", "http://x", 10.0) is None
+
+    def test_probe_none_no_base(self):
+        assert _openai_provider()._probe_responses("p", "gpt-4o", "sk-x", None, 10.0) is None
+
+    def test_probe_none_200_no_responses_event(self, monkeypatch):
+        """200 但返回 chat 格式 (非 responses 事件) → None."""
+        lines = ['data: {"choices":[{"delta":{"content":"hi"}}]}', "data: [DONE]"]
+        _patch_client(monkeypatch, stream=_FakeStream(200, lines))
+        assert _openai_provider()._probe_responses("p", "gpt-4o", "sk-x", "http://x", 10.0) is None
+
+    def test_test_model_appends_responses_when_main_ok(self, monkeypatch):
+        """主探测 openai ok + responses ok → api_type 含 openai + responses."""
+        class Client:
+            def __init__(self, *a, **k):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def stream(self, method, url, **k):
+                if "/v1/responses" in url:
+                    return _FakeStream(200, [
+                        'data: {"type":"response.output_text.delta","delta":"hi"}',
+                    ])
+                return _FakeStream(200, [
+                    'data: {"choices":[{"delta":{"content":"hi"}}]}', "data: [DONE]",
+                ])
+
+        monkeypatch.setattr("agentfly.providers.base.httpx.Client", Client)
+        r = _openai_provider().test_model("gpt-4o")
+        assert r.status == "ok"
+        assert set(r.api_type.split(",")) == {"openai", "responses"}
+
+    def test_test_model_responses_fallback_when_main_fails(self, monkeypatch):
+        """主探测 error 但 responses ok (codex-only 模型) → responses 兜底, status=ok."""
+        class Client:
+            def __init__(self, *a, **k):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def stream(self, method, url, **k):
+                if "/v1/responses" in url:
+                    return _FakeStream(200, [
+                        'data: {"type":"response.output_text.delta","delta":"hi"}',
+                    ])
+                return _FakeStream(400, [])  # chat 400 → 主探测 fallback 失败
+
+        monkeypatch.setattr("agentfly.providers.base.httpx.Client", Client)
+        r = _openai_provider().test_model("gpt-4o")
+        assert r.status == "ok"
+        assert r.api_type == "responses"
+        assert r.ttft_ms >= 0
+
+    def test_anthropic_only_no_responses_probe(self, monkeypatch):
+        """anthropic-only provider (无 openai endpoint) → 不探 responses."""
+        calls = {"n": 0}
+
+        class Client:
+            def __init__(self, *a, **k):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def stream(self, method, url, **k):
+                calls["n"] += 1
+                return _FakeStream(200, [
+                    'data: {"type":"content_block_delta","delta":{"text":"hi"}}',
+                ])
+
+        monkeypatch.setattr("agentfly.providers.base.httpx.Client", Client)
+        r = _anthropic_provider().test_model("claude-opus-4-8")
+        assert r.status == "ok"
+        assert "responses" not in (r.api_type or "")
+        assert calls["n"] == 1  # 仅 anthropic 主探测, 无 responses 探针
 
 
 class TestAnthropicParseEdge:

@@ -277,3 +277,23 @@ class TestLaunchCommand:
         assert _FakeLauncher.last["provider_key"] == "prox"
         assert _FakeLauncher.last["model"] == "mymodel"
 
+    def test_explicit_provider_no_model_selects_model(self, monkeypatch, tty):
+        """--provider 显式指定但无 --model, TTY 多模型 → 调 _select_model 选模型 (回归).
+
+        旧逻辑: --provider 分支完全跳过模型选择, 直接用 default_model.
+        新逻辑: provider 已定且无 --model → 调 _select_model.
+        """
+        cfg = UnifiedConfig(
+            providers={"prox": _provider("anthropic", models=["m1", "m2"], default="m1")},
+            agents={},
+        )
+        monkeypatch.setattr(launch_mod, "get_registry", lambda: _FakeRegistry())
+        monkeypatch.setattr(launch_mod, "ensure_config_exists", lambda: (cfg, Path("cfg")))
+        monkeypatch.setattr(launch_mod, "AgentLauncher", _FakeLauncher)
+        # CliRunner 会隔离 stdin 使 isatty()=False, 直接 mock _select_model 验证它被调用
+        monkeypatch.setattr(launch_mod, "_select_model", lambda pc: "m2")
+        r = CliRunner().invoke(launch, ["claude", "-P", "prox"])
+        assert r.exit_code == 0
+        assert _FakeLauncher.last["provider_key"] == "prox"
+        assert _FakeLauncher.last["model"] == "m2"
+

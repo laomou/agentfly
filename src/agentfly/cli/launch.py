@@ -85,10 +85,12 @@ def launch(
         if agent_cfg and agent_cfg.provider:
             provider_key = agent_cfg.provider
         else:
-            # 既没显式指定也没绑定 → 让用户选 Provider（必要时再选 Model）
+            # 既没显式指定也没绑定 → 让用户选 Provider
             provider_key = _select_provider(config, agent_name, adapter.preferred_format)
-            if model is None:
-                model = _select_model(config.providers[provider_key])
+
+    # provider 已定 (无论 --provider / 绑定 / 交互选) 且未显式 --model → 选模型
+    if model is None:
+        model = _select_model(config.providers[provider_key])
 
     # 解析配置
     try:
