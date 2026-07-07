@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agentfly"
-version = "0.7.1"
+version = "0.7.2"
 description = "AI Agent 客制化配置中心 — 统一管理多 Agent 配置，一键启动"
 readme = "README.md"
 license = "MIT"
