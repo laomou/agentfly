@@ -86,9 +86,14 @@ def test_openai_base_url_appends_v1():
     assert openai_base_url("https://api.x.com/v1") == "https://api.x.com/v1"
 
 
-def test_codex_base_url_has_v1():
-    env = Codex().env_vars(_resolved_for(Codex()))
-    assert env["OPENAI_BASE_URL"].endswith("/v1")
+def test_codex_uses_config_override_not_base_url():
+    adapter = Codex()
+    env = adapter.env_vars(_resolved_for(adapter))
+    assert "OPENAI_BASE_URL" not in env  # 改用 -c 覆盖注入 provider
+    cmd = adapter.launch_command(_resolved_for(adapter))
+    joined = " ".join(cmd)
+    assert 'wire_api="chat_completions"' in joined
+    assert 'base_url="https://api.openai.com/v1"' in joined
 
 
 def test_opencode_config_content_has_v1():
