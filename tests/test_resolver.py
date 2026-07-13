@@ -13,7 +13,7 @@ def _cfg(api_key="sk-x", endpoints=None):
     return UnifiedConfig(
         providers={
             "p": ProviderConfig(
-                name=ProviderType.OPENAI, api_key=api_key,
+                type=ProviderType.OPENAI, api_key=api_key,
                 endpoints=endpoints if endpoints is not None else {"openai": "http://x"},
                 models=["m1", "m2"], default_model="m1",
             )
@@ -27,7 +27,7 @@ class TestResolve:
         r = ConfigResolver(_cfg()).resolve("codex", preferred_format="openai")
         assert r.effective_api_base == "http://x"
         assert r.agent.model == "m2"
-        assert r.provider.name == ProviderType.OPENAI
+        assert r.provider.type == ProviderType.OPENAI
 
     def test_agent_not_in_config_uses_default_model(self):
         cfg = UnifiedConfig(providers=_cfg().providers, agents={})
@@ -62,16 +62,16 @@ class TestGetProvider:
 
     def test_accepts_provider_type(self):
         cfg = UnifiedConfig(providers={
-            "openai": ProviderConfig(name=ProviderType.OPENAI, api_key="k",
+            "openai": ProviderConfig(type=ProviderType.OPENAI, api_key="k",
                                      endpoints={"openai": "http://x"}, models=["m"])
         })
         pc = ConfigResolver(cfg).get_provider(ProviderType.OPENAI)
-        assert pc.name == ProviderType.OPENAI
+        assert pc.type == ProviderType.OPENAI
 
 
 def test_no_agent_no_provider_key_falls_back_to_first():
     # agent 不在 config 且未给 provider_key → 取第一个 provider
     cfg = UnifiedConfig(providers=_cfg().providers, agents={})
     r = ConfigResolver(cfg).resolve("codex", preferred_format="openai")
-    assert r.provider.name == ProviderType.OPENAI
+    assert r.provider.type == ProviderType.OPENAI
     assert r.agent.provider == "p"

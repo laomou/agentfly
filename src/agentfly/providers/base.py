@@ -66,15 +66,20 @@ class Provider(ABC):
     def env_for(self, agent_name: str) -> dict[str, str]:
         """返回该 Provider 给指定 Agent 的补充环境变量.
 
-        读取顺序: ~/.config/agentfly/env/{name}.json → 包内 providers/{name}.json.
+        按 config key (config.yaml 中的 dict key) 加载
+        ~/.config/agentfly/env/{key}.json → 包内 providers/{key}.json.
         """
         if agent_name in self._env_cache:
             return self._env_cache[agent_name]
 
-        name = self.name.value
+        key = self.config.key
+        if not key:
+            self._env_cache[agent_name] = {}
+            return {}
+
         for env_file in (
-            Path.home() / ".config" / "agentfly" / "env" / f"{name}.json",
-            Path(__file__).parent / f"{name}.json",
+            Path.home() / ".config" / "agentfly" / "env" / f"{key}.json",
+            Path(__file__).parent / f"{key}.json",
         ):
             if not env_file.exists():
                 continue
@@ -251,7 +256,7 @@ class Provider(ABC):
         - 多个接口都通时 api_type 记成 "anthropic,openai[,openai_responses]" (速度快的在前),
           Total/TTFT/TPS 显示最快接口的指标.
         """
-        pkey = provider_key or self.config.name.value
+        pkey = provider_key or self.config.type.value
         key = api_key or self.config.api_key
         base = self.config.endpoints.get("openai")
 

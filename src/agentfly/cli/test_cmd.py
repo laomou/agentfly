@@ -34,7 +34,7 @@ def _resolve(config, name: str) -> tuple[ProviderConfig, Any]:
         raise click.ClickException(f"Provider 未配置: {name}")
     p = get_provider(pc)
     if p is None:
-        raise click.ClickException(f"不支持的 Provider: {pc.name.value}")
+        raise click.ClickException(f"不支持的 Provider: {pc.type.value}")
     return pc, p
 
 

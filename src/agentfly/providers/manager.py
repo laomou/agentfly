@@ -36,7 +36,7 @@ class ProviderManager:
             key: 存储键名。内置 Provider 默认为 name.value (如 "anthropic")，
                  CUSTOM Provider 必须指定 (如 "my-deepseek").
         """
-        k = key or provider.name.value
+        k = key or provider.type.value
         self._config.providers[k] = provider
 
     def remove(self, name: str | ProviderType) -> None:

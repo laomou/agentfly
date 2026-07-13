@@ -20,7 +20,7 @@ from agentfly.models.types import ProviderType
 def _cfg():
     return UnifiedConfig(providers={
         "deepseek": ProviderConfig(
-            name=ProviderType.DEEPSEEK, api_key="${DS_KEY}",
+            type=ProviderType.DEEPSEEK, api_key="${DS_KEY}",
             endpoints={"openai": "http://x"},
             models=["m1", "m2"], default_model="m1",
         )

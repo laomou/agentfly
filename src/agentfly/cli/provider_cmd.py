@@ -322,7 +322,7 @@ def add_provider(name: str | None, api_base: str | None, api_key: str | None,
     provider_type = ProviderType(known["type"]) if known else ProviderType.CUSTOM
     endpoints = _build_endpoints(known, protocols, api_base)
     provider_config = ProviderConfig(
-        name=provider_type,
+        type=provider_type,
         api_key=api_key,
         endpoints=endpoints,
         models=model_list,
@@ -408,7 +408,7 @@ def show_provider(name: str):
         sys.exit(1)
 
     click.echo(f"  Key:        {name}")
-    click.echo(f"  Type:       {provider.name.value}")
+    click.echo(f"  Type:       {provider.type.value}")
     click.echo(f"  API Key:    {_mask_key(provider.api_key)}")
     if provider.endpoints:
         for fmt, url in provider.endpoints.items():

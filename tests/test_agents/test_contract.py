@@ -37,7 +37,7 @@ def _resolved_for(adapter) -> ResolvedConfig:
     return ResolvedConfig(
         agent=AgentConfig(name=adapter.name, provider=ptype.value, model="m1"),
         provider=ProviderConfig(
-            name=ptype, api_key="sk-x", endpoints={fmt: "http://x"},
+            type=ptype, api_key="sk-x", endpoints={fmt: "http://x"},
             models=["m1"], default_model="m1",
         ),
         effective_api_base=base,
@@ -70,7 +70,7 @@ def test_cline_anthropic_branch():
     rc = ResolvedConfig(
         agent=AgentConfig(name=AgentType.CLINE, provider="anthropic", model="m1"),
         provider=ProviderConfig(
-            name=ProviderType.ANTHROPIC, api_key="sk-x",
+            type=ProviderType.ANTHROPIC, api_key="sk-x",
             endpoints={"anthropic": "http://x"}, models=["m1"]),
         effective_api_base="https://api.anthropic.com",
         effective_api_format="anthropic",

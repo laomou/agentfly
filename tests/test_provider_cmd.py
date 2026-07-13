@@ -90,7 +90,7 @@ class TestModelProviderKey:
 
     def test_uses_provided_key(self):
         config = ProviderConfig(
-            name=ProviderType.CUSTOM,
+            type=ProviderType.CUSTOM,
             api_key="sk-test",
             endpoints={"openai": "http://localhost:9999"},
             models=["test-model"],
@@ -102,7 +102,7 @@ class TestModelProviderKey:
 
     def test_fallback_when_empty(self):
         config = ProviderConfig(
-            name=ProviderType.DEEPSEEK,
+            type=ProviderType.DEEPSEEK,
             api_key="sk-test",
             endpoints={"openai": "http://localhost:9999"},
             models=["test-model"],

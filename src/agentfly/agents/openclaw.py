@@ -30,7 +30,7 @@ class OpenClaw(Agent):
     }
 
     def env_vars(self, config: ResolvedConfig) -> dict[str, str]:
-        mapping = self._PROVIDER_ENV_MAP.get(config.provider.name, {})
+        mapping = self._PROVIDER_ENV_MAP.get(config.provider.type, {})
         env = {}
         if api_key_env := mapping.get("api_key_env"):
             env[api_key_env] = config.provider.api_key

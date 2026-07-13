@@ -13,7 +13,7 @@ from agentfly.models.types import ProviderType
 def _cfg(api_key, endpoints=None, models=None):
     return UnifiedConfig(providers={
         "deepseek": ProviderConfig(
-            name=ProviderType.DEEPSEEK, api_key=api_key,
+            type=ProviderType.DEEPSEEK, api_key=api_key,
             endpoints=endpoints if endpoints is not None else {"openai": "http://x"},
             models=models if models is not None else ["m1"],
         )

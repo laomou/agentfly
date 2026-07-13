@@ -23,7 +23,7 @@ from agentfly.models.types import AgentType, ProviderType
 def _provider(fmt: str = "openai", models: list[str] | None = None,
               default: str = "") -> ProviderConfig:
     return ProviderConfig(
-        name=ProviderType.CUSTOM,
+        type=ProviderType.CUSTOM,
         api_key="sk-x",
         endpoints={fmt: "http://example"},
         models=models or [],
@@ -59,16 +59,16 @@ class TestSelectProvider:
     def test_filters_by_format(self):
         # 只有一个支持 anthropic → 自动选它
         cfg = UnifiedConfig(providers={
-            "oa": ProviderConfig(name=ProviderType.OPENAI, api_key="k",
+            "oa": ProviderConfig(type=ProviderType.OPENAI, api_key="k",
                                  endpoints={"openai": "http://x"}, models=["m1"]),
-            "an": ProviderConfig(name=ProviderType.ANTHROPIC, api_key="k",
+            "an": ProviderConfig(type=ProviderType.ANTHROPIC, api_key="k",
                                  endpoints={"anthropic": "http://x"}, models=["m1"]),
         })
         assert _select_provider(cfg, "claude", "anthropic") == "an"
 
     def test_no_compatible_exits(self):
         cfg = UnifiedConfig(providers={
-            "oa": ProviderConfig(name=ProviderType.OPENAI, api_key="k",
+            "oa": ProviderConfig(type=ProviderType.OPENAI, api_key="k",
                                  endpoints={"openai": "http://x"}, models=["m1"]),
         })
         with pytest.raises(SystemExit):

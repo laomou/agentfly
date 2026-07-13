@@ -19,5 +19,5 @@ _PROVIDER_CLASSES: dict[ProviderType, type] = {
 
 def get_provider(config: ProviderConfig):
     """根据 ProviderConfig 创建对应的 Provider 实例."""
-    cls = _PROVIDER_CLASSES.get(config.name)
+    cls = _PROVIDER_CLASSES.get(config.type)
     return cls(config) if cls else None

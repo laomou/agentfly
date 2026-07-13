@@ -9,7 +9,7 @@ from agentfly.models.types import AgentType, ProviderType
 
 def make_codex_config(api_base: str = "https://api.openai.com") -> ResolvedConfig:
     provider = ProviderConfig(
-        name=ProviderType.OPENAI,
+        type=ProviderType.OPENAI,
         api_key="sk-test",
         endpoints={"openai": "http://x"},
         models=["gpt-4o"],

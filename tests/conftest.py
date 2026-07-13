@@ -21,7 +21,7 @@ from agentfly.models.types import AgentType, ProviderType
 def provider_config():
     """标准 Anthropic Provider 配置."""
     return ProviderConfig(
-        name=ProviderType.ANTHROPIC,
+        type=ProviderType.ANTHROPIC,
         api_key="test-key-123",
         endpoints={"anthropic": "https://api.anthropic.com"},
         models=["claude-sonnet-4-6", "claude-opus-4-8"],

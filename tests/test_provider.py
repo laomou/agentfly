@@ -15,12 +15,12 @@ class TestProviderManager:
         mgr = ProviderManager(unified_config)
         providers = mgr.list()
         assert len(providers) == 1
-        assert providers[0].name == ProviderType.ANTHROPIC
+        assert providers[0].type == ProviderType.ANTHROPIC
 
     def test_add_new(self, unified_config):
         mgr = ProviderManager(unified_config)
         openai_config = ProviderConfig(
-            name=ProviderType.OPENAI,
+            type=ProviderType.OPENAI,
             api_key="${OPENAI_API_KEY}",
             endpoints={"openai": "https://api.openai.com"},
             models=["gpt-4o"],
@@ -45,4 +45,4 @@ class TestProviderManager:
         mgr = ProviderManager(unified_config)
         provider = mgr.get("anthropic")
         assert provider is not None
-        assert provider.name == ProviderType.ANTHROPIC
+        assert provider.type == ProviderType.ANTHROPIC

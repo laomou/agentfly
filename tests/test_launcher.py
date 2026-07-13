@@ -42,7 +42,7 @@ class _FakeProvider:
 def _resolved():
     return ResolvedConfig(
         agent=AgentConfig(name=AgentType.CODEX, provider="openai", model="m1"),
-        provider=ProviderConfig(name=ProviderType.OPENAI, api_key="sk-x",
+        provider=ProviderConfig(type=ProviderType.OPENAI, api_key="sk-x",
                                 endpoints={"openai": "http://x"}, models=["m1"]),
         effective_api_base="http://x", effective_api_format="openai",
     )

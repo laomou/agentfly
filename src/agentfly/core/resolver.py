@@ -56,7 +56,7 @@ def _pick_endpoint(provider: ProviderConfig, preferred_format: str) -> str:
     url = provider.endpoints.get(preferred_format)
     if not url:
         raise ValueError(
-            f"Provider '{provider.name.value}' 未配置 {preferred_format} endpoint. "
+            f"Provider '{provider.key or provider.type.value}' 未配置 {preferred_format} endpoint. "
             f"已配置: {list(provider.endpoints)}"
         )
     return url
@@ -106,8 +106,8 @@ class ConfigResolver:
                 f"请运行 'agentfly provider add {pk} --api-base <url> --api-key <key>'"
             )
 
-        # 4. 解析环境变量引用
-        resolved_provider = _resolve_provider(provider)
+        # 4. 解析环境变量引用，并注入配置键名
+        resolved_provider = _resolve_provider(provider).model_copy(update={"key": pk})
 
         # 5. 根据 Agent 格式选择正确的 API Base
         api_base = _pick_endpoint(resolved_provider, preferred_format)
@@ -134,4 +134,4 @@ class ConfigResolver:
         provider = self._config.providers.get(provider_name)
         if provider is None:
             raise KeyError(f"Provider '{provider_name}' 未配置")
-        return _resolve_provider(provider)
+        return _resolve_provider(provider).model_copy(update={"key": provider_name})

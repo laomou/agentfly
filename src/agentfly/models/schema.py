@@ -18,7 +18,8 @@ class ProviderConfig(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    name: ProviderType = Field(description="Provider 类型")
+    type: ProviderType = Field(description="Provider 类型")
+    key: str = Field(default="", description="Provider 配置键名 (config.yaml 中的 dict key)")
     api_key: str = Field(description="API Key，支持 ${ENV_VAR} 引用")
     endpoints: dict[str, str] = Field(
         default_factory=dict,

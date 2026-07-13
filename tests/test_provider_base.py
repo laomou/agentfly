@@ -13,14 +13,14 @@ from agentfly.providers.openai import OpenAIProvider
 
 def _openai_provider():
     return OpenAIProvider(ProviderConfig(
-        name=ProviderType.OPENAI, api_key="sk-x",
+        type=ProviderType.OPENAI, api_key="sk-x",
         endpoints={"openai": "https://api.openai.com"}, models=["gpt-4o"],
     ))
 
 
 def _anthropic_provider():
     return AnthropicProvider(ProviderConfig(
-        name=ProviderType.ANTHROPIC, api_key="k",
+        type=ProviderType.ANTHROPIC, api_key="k",
         endpoints={"anthropic": "https://api.anthropic.com"}, models=["claude-opus-4-8"],
     ))
 
@@ -151,7 +151,7 @@ class TestProviderMethods:
     def test_deepseek(self):
         from agentfly.providers.deepseek import DeepSeekProvider
         p = DeepSeekProvider(ProviderConfig(
-            name=ProviderType.DEEPSEEK, api_key="k",
+            type=ProviderType.DEEPSEEK, api_key="k",
             endpoints={"openai": "http://x"}, models=["d1"]))
         url, _, t = p._test_candidates("d1", "k")[0]
         assert url == "http://x/v1/chat/completions" and t == "openai"
@@ -162,7 +162,7 @@ class TestProviderMethods:
         """只配 openai endpoint: 只探 openai."""
         from agentfly.providers.custom import CustomProvider
         p = CustomProvider(ProviderConfig(
-            name=ProviderType.CUSTOM, api_key="k",
+            type=ProviderType.CUSTOM, api_key="k",
             endpoints={"openai": "http://x"}, models=["c1"]))
         _patch_client(monkeypatch, stream=_FakeStream(200, [
             'data: {"choices":[{"delta":{"content":"hi"}}]}',
@@ -176,7 +176,7 @@ class TestProviderMethods:
         """只配 anthropic endpoint: 只探 anthropic."""
         from agentfly.providers.custom import CustomProvider
         p = CustomProvider(ProviderConfig(
-            name=ProviderType.CUSTOM, api_key="k",
+            type=ProviderType.CUSTOM, api_key="k",
             endpoints={"anthropic": "http://x"}, models=["c1"]))
         _patch_client(monkeypatch, stream=_FakeStream(200, [
             'event: content_block_delta',
@@ -191,7 +191,7 @@ class TestProviderMethods:
         """anthropic 400 自动回退 openai, 成功."""
         from agentfly.providers.custom import CustomProvider
         p = CustomProvider(ProviderConfig(
-            name=ProviderType.CUSTOM, api_key="k",
+            type=ProviderType.CUSTOM, api_key="k",
             endpoints={"openai": "http://x", "anthropic": "http://x"},
             models=["c1"]))
         # 第一次调用 (anthropic) 400, 第二次调用 (openai) 成功
@@ -235,7 +235,7 @@ class TestProviderMethods:
         """已缓存 api_type → 只试一次, 不标记 dirty."""
         from agentfly.providers.custom import CustomProvider
         p = CustomProvider(ProviderConfig(
-            name=ProviderType.CUSTOM, api_key="k", endpoints={"openai": "http://x", "anthropic": "http://x"},
+            type=ProviderType.CUSTOM, api_key="k", endpoints={"openai": "http://x", "anthropic": "http://x"},
             models={"c1": "openai"}))
 
         class Client:
@@ -265,7 +265,7 @@ class TestProviderMethods:
         """两个接口都通 → api_type 记成 'anthropic,openai', 缓存双值."""
         from agentfly.providers.custom import CustomProvider
         p = CustomProvider(ProviderConfig(
-            name=ProviderType.CUSTOM, api_key="k", endpoints={"openai": "http://x", "anthropic": "http://x"},
+            type=ProviderType.CUSTOM, api_key="k", endpoints={"openai": "http://x", "anthropic": "http://x"},
             models=["c1"]))
 
         class Client:
@@ -299,7 +299,7 @@ class TestProviderMethods:
         """两个端点都 400 → error."""
         from agentfly.providers.custom import CustomProvider
         p = CustomProvider(ProviderConfig(
-            name=ProviderType.CUSTOM, api_key="k",
+            type=ProviderType.CUSTOM, api_key="k",
             endpoints={"openai": "http://x", "anthropic": "http://x"},
             models=["c1"]))
 
@@ -327,7 +327,7 @@ class TestProviderMethods:
         """anthropic 401 → 直接返回, 不回退."""
         from agentfly.providers.custom import CustomProvider
         p = CustomProvider(ProviderConfig(
-            name=ProviderType.CUSTOM, api_key="k",
+            type=ProviderType.CUSTOM, api_key="k",
             endpoints={"openai": "http://x", "anthropic": "http://x"},
             models=["c1"]))
 
@@ -356,7 +356,7 @@ class TestProviderMethods:
         """anthropic 超时 → 直接返回, 不回退."""
         from agentfly.providers.custom import CustomProvider
         p = CustomProvider(ProviderConfig(
-            name=ProviderType.CUSTOM, api_key="k",
+            type=ProviderType.CUSTOM, api_key="k",
             endpoints={"openai": "http://x", "anthropic": "http://x"},
             models=["c1"]))
 
@@ -385,7 +385,7 @@ class TestProviderMethods:
         """没有 base_url → error."""
         from agentfly.providers.custom import CustomProvider
         p = CustomProvider(ProviderConfig(
-            name=ProviderType.CUSTOM, api_key="k",
+            type=ProviderType.CUSTOM, api_key="k",
             endpoints={}, models=["c1"]))
         r = p.test_model("c1")
         assert r.status == "error"
@@ -394,7 +394,7 @@ class TestProviderMethods:
         """CustomProvider 的 parse 兼容两种 SSE."""
         from agentfly.providers.custom import CustomProvider
         p = CustomProvider(ProviderConfig(
-            name=ProviderType.CUSTOM, api_key="k", endpoints={}, models=[]))
+            type=ProviderType.CUSTOM, api_key="k", endpoints={}, models=[]))
         assert p._parse_stream_chunk('data: {"choices":[{"delta":{"content":"hi"}}]}') == "hi"
         assert p._parse_stream_chunk('data: {"choices":[{"delta":{"reasoning_content":"r"}}]}') == "r"
         assert p._parse_stream_chunk('data: {"type":"content_block_delta","delta":{"text":"hi"}}') == "hi"

@@ -61,7 +61,7 @@ class TestTps:
 def _cfg():
     return UnifiedConfig(providers={
         "deepseek": ProviderConfig(
-            name=ProviderType.DEEPSEEK, api_key="sk-x",
+            type=ProviderType.DEEPSEEK, api_key="sk-x",
             endpoints={"openai": "https://api.deepseek.com"},
             models=["m1", "m2"], default_model="m1",
         )
@@ -147,7 +147,7 @@ class TestExpandModels:
     @staticmethod
     def _pc():
         return ProviderConfig(
-            name=ProviderType.CUSTOM, api_key="k",
+            type=ProviderType.CUSTOM, api_key="k",
             endpoints={"openai": "http://x"},
             models=["glm-5.2", "glm-5.2-jigan", "glm-5.2:ksyun", "deepseek-v3"],
         )
@@ -199,7 +199,7 @@ class TestRefresh:
 
     def test_clear_api_type(self):
         pc = ProviderConfig(
-            name=ProviderType.CUSTOM, api_key="k", endpoints={"openai": "http://x"},
+            type=ProviderType.CUSTOM, api_key="k", endpoints={"openai": "http://x"},
             models={"m1": "openai", "m2": ""},
         )
         _clear_api_type(pc)
